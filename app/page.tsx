@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type Message = {
   id: number;
@@ -27,7 +29,6 @@ export default function Home() {
 
     if (!text || loading) return;
 
-    // Add user message immediately
     setInput("");
 
     setMessages((prev) => [
@@ -48,11 +49,9 @@ export default function Home() {
 
       const response = await fetch("/api/chat", {
         method: "POST",
-
         headers: {
           "Content-Type": "application/json",
         },
-
         body: JSON.stringify({
           text: text,
         }),
@@ -99,7 +98,6 @@ export default function Home() {
           text: assistantReply,
         },
       ]);
-
     } catch (error) {
       console.error("Frontend chat error:", error);
 
@@ -114,7 +112,6 @@ export default function Home() {
               : "Sorry, I couldn't get a response.",
         },
       ]);
-
     } finally {
       setLoading(false);
     }
@@ -146,14 +143,25 @@ export default function Home() {
         ====================================== */}
 
         <div className="messages">
-
           {messages.map((message) => (
             <div
               key={message.id}
               className={`row ${message.role}`}
             >
               <div className="bubble">
-                {message.text}
+
+                {message.role === "assistant" ? (
+                  <div className="markdown-content">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                    >
+                      {message.text}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  message.text
+                )}
+
               </div>
             </div>
           ))}
@@ -171,7 +179,6 @@ export default function Home() {
               </div>
             </div>
           )}
-
         </div>
 
         {/* ======================================
@@ -184,19 +191,14 @@ export default function Home() {
         >
           <input
             value={input}
-            onChange={(e) =>
-              setInput(e.target.value)
-            }
+            onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about a destination..."
             disabled={loading}
             autoComplete="off"
           />
 
           <button
-            disabled={
-              loading ||
-              !input.trim()
-            }
+            disabled={loading || !input.trim()}
             aria-label="Send"
           >
             {loading ? "…" : "Send"}

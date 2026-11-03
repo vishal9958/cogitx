@@ -249,6 +249,7 @@ export default function DiwaliCardPage() {
   const [showSolution, setShowSolution] = useState(false);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [hintsLeft, setHintsLeft] = useState(3);
 
   // Active cell and word tracking
   const [focusedCell, setFocusedCell] = useState<string | null>(null);
@@ -419,11 +420,20 @@ export default function DiwaliCardPage() {
     }
   };
 
-  // Request a precise clue hint:
+  // Request a precise clue hint (Max 3 hints per game):
   // If user is focused on a box (e.g. 13 Down), give hint for that EXACT word!
   // Otherwise pick the first unsolved clue in the puzzle.
   const requestHint = async () => {
     if (loading) return;
+
+    // Check if 3 hint limit reached
+    if (hintsLeft <= 0) {
+      setHintToast({
+        title: "💡 No Hints Remaining",
+        message: "You have used all 3 hints! Try solving the rest with the clues.",
+      });
+      return;
+    }
 
     // 1. Determine target clue: either current active clue or first incomplete clue
     let targetClue = activeClue;
@@ -464,6 +474,10 @@ export default function DiwaliCardPage() {
       return;
     }
 
+    // Deduct 1 hint from the 3 total
+    const remaining = hintsLeft - 1;
+    setHintsLeft(remaining);
+
     // 3. Reveal the letter immediately in the grid and focus it
     setLetters((prev) => ({
       ...prev,
@@ -475,9 +489,9 @@ export default function DiwaliCardPage() {
 
     inputRefs.current[targetCellKey]?.focus();
 
-    // 4. Show clear clue banner so user knows exactly what word this hint is for
+    // 4. Show clear clue banner with remaining hint count
     setHintToast({
-      title: `💡 Hint for ${targetClue.label} (${targetClue.solution.length} Letters)`,
+      title: `💡 Hint for ${targetClue.label} (${remaining} left)`,
       clueText: `"${targetClue.clue}"`,
       message: `Revealed letter '${targetSolutionLetter}' at position ${targetPos} of ${targetClue.solution.length}!`,
     });
@@ -498,7 +512,7 @@ export default function DiwaliCardPage() {
       const data = await res.json();
       if (data?.aiMessage) {
         setHintToast({
-          title: `💡 Hint for ${targetClue.label}`,
+          title: `💡 Hint for ${targetClue.label} (${remaining} left)`,
           clueText: `"${targetClue.clue}"`,
           message: data.aiMessage,
         });
@@ -517,6 +531,7 @@ export default function DiwaliCardPage() {
     setShowSolution(false);
     setFocusedCell(null);
     setActiveClue(null);
+    setHintsLeft(3);
   };
 
   const printCard = () => {
@@ -708,14 +723,16 @@ export default function DiwaliCardPage() {
           type="button"
           className="toolbar-btn accent"
           onClick={requestHint}
-          disabled={loading}
+          disabled={loading || hintsLeft <= 0}
           title={
-            activeClue
-              ? `Get hint for ${activeClue.label}`
-              : "Get a hint for the puzzle"
+            hintsLeft <= 0
+              ? "All 3 hints used"
+              : activeClue
+              ? `Get hint for ${activeClue.label} (${hintsLeft} left)`
+              : `Get a hint (${hintsLeft} left)`
           }
         >
-          💡 Hint {activeClue ? `(${activeClue.label})` : ""}
+          💡 Hint {activeClue ? `(${activeClue.label})` : ""} [{hintsLeft}/3]
         </button>
 
         <button

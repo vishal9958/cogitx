@@ -9,6 +9,145 @@ interface CellDef {
   solution: string;
 }
 
+interface ClueDef {
+  id: string; // e.g. "13D", "1A"
+  number: number;
+  direction: "across" | "down";
+  label: string; // "13 Down"
+  clue: string;
+  solution: string;
+  cells: string[]; // cell keys "r-c"
+}
+
+const CLUES_DATA: ClueDef[] = [
+  {
+    id: "1A",
+    number: 1,
+    direction: "across",
+    label: "1 Across",
+    clue: "A source of light on a desk or in a window. (4)",
+    solution: "LAMP",
+    cells: ["0-11", "0-12", "0-13", "0-14"],
+  },
+  {
+    id: "2D",
+    number: 2,
+    direction: "down",
+    label: "2 Down",
+    clue: "Calm and quiet, and a wish for the year ahead. (5)",
+    solution: "PEACE",
+    cells: ["0-14", "1-14", "2-14", "3-14", "4-14"],
+  },
+  {
+    id: "3D",
+    number: 3,
+    direction: "down",
+    label: "3 Down",
+    clue: "A hope for something good to come. (4)",
+    solution: "WISH",
+    cells: ["1-7", "2-7", "3-7", "4-7"],
+  },
+  {
+    id: "4D",
+    number: 4,
+    direction: "down",
+    label: "4 Down",
+    clue: "What every light pushes back. (8)",
+    solution: "DARKNESS",
+    cells: ["1-9", "2-9", "3-9", "4-9", "5-9", "6-9", "7-9", "8-9"],
+  },
+  {
+    id: "5A",
+    number: 5,
+    direction: "across",
+    label: "5 Across",
+    clue: "Small clay dish of oil with a wick, lit at dusk on holiday evenings. (4)",
+    solution: "DIYA",
+    cells: ["2-6", "2-7", "2-8", "2-9"],
+  },
+  {
+    id: "6D",
+    number: 6,
+    direction: "down",
+    label: "6 Down",
+    clue: "Colourful floor art made of powder at the entrance of a home. (7)",
+    solution: "RANGOLI",
+    cells: ["2-11", "3-11", "4-11", "5-11", "6-11", "7-11", "8-11"],
+  },
+  {
+    id: "7A",
+    number: 7,
+    direction: "across",
+    label: "7 Across",
+    clue: "To start a fire, or to stir up a feeling. (6)",
+    solution: "KINDLE",
+    cells: ["4-9", "4-10", "4-11", "4-12", "4-13", "4-14"],
+  },
+  {
+    id: "8A",
+    number: 8,
+    direction: "across",
+    label: "8 Across",
+    clue: "Where the lights are hung and the family gathers. (4)",
+    solution: "HOME",
+    cells: ["6-6", "6-7", "6-8", "6-9"],
+  },
+  {
+    id: "9D",
+    number: 9,
+    direction: "down",
+    label: "9 Down",
+    clue: "Wax around a wick, lit for light. (6)",
+    solution: "CANDLE",
+    cells: ["7-13", "8-13", "9-13", "10-13", "11-13", "12-13"],
+  },
+  {
+    id: "10A",
+    number: 10,
+    direction: "across",
+    label: "10 Across",
+    clue: "A celebration marked on the calendar each year. (8)",
+    solution: "FESTIVAL",
+    cells: ["8-7", "8-8", "8-9", "8-10", "8-11", "8-12", "8-13", "8-14"],
+  },
+  {
+    id: "11D",
+    number: 11,
+    direction: "down",
+    label: "11 Down",
+    clue: "Treats shared between neighbours and friends on a holiday. (6)",
+    solution: "SWEETS",
+    cells: ["10-11", "11-11", "12-11", "13-11", "14-11", "15-11"],
+  },
+  {
+    id: "12A",
+    number: 12,
+    direction: "across",
+    label: "12 Across",
+    clue: "The Indian holiday of lights, celebrated around the world each autumn. (6)",
+    solution: "DIWALI",
+    cells: ["11-9", "11-10", "11-11", "11-12", "11-13", "11-14"],
+  },
+  {
+    id: "13D",
+    number: 13,
+    direction: "down",
+    label: "13 Down",
+    clue: "Presents exchanged with family and friends. (5)",
+    solution: "GIFTS",
+    cells: ["12-8", "13-8", "14-8", "15-8", "16-8"],
+  },
+  {
+    id: "14A",
+    number: 14,
+    direction: "across",
+    label: "14 Across",
+    clue: "Soft coloured parts of a flower. (6)",
+    solution: "PETALS",
+    cells: ["15-6", "15-7", "15-8", "15-9", "15-10", "15-11"],
+  },
+];
+
 const CROSSWORD_CELLS: CellDef[] = [
   // 1 Across: LAMP (row 0, cols 11-14)
   { r: 0, c: 11, solution: "L" },
@@ -110,10 +249,18 @@ export default function DiwaliCardPage() {
   const [showSolution, setShowSolution] = useState(false);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Active cell and word tracking
+  const [focusedCell, setFocusedCell] = useState<string | null>(null);
+  const [activeClue, setActiveClue] = useState<ClueDef | null>(null);
+  const [hintedCell, setHintedCell] = useState<string | null>(null);
+
   const [hintToast, setHintToast] = useState<{
     title: string;
+    clueText?: string;
     message: string;
   } | null>(null);
+
   const [resultModal, setResultModal] = useState<{
     wordsCorrect: number;
     wordsTotal: number;
@@ -130,6 +277,43 @@ export default function DiwaliCardPage() {
       return acc;
     }, {} as Record<string, CellDef>)
   ).current;
+
+  // Build mapping from cellKey -> matching ClueDef[]
+  const cellToClues = useRef<Record<string, ClueDef[]>>(
+    (() => {
+      const map: Record<string, ClueDef[]> = {};
+      CLUES_DATA.forEach((clue) => {
+        clue.cells.forEach((cellKey) => {
+          if (!map[cellKey]) map[cellKey] = [];
+          map[cellKey].push(clue);
+        });
+      });
+      return map;
+    })()
+  ).current;
+
+  // Select a clue and focus its first cell
+  const handleSelectClue = (clue: ClueDef) => {
+    setActiveClue(clue);
+    const firstCell = clue.cells[0];
+    if (firstCell && inputRefs.current[firstCell]) {
+      inputRefs.current[firstCell]?.focus();
+    }
+  };
+
+  // When a cell is focused, pick the matching clue
+  const handleCellFocus = (key: string) => {
+    setFocusedCell(key);
+    const matchingClues = cellToClues[key];
+    if (matchingClues && matchingClues.length > 0) {
+      // If currently active clue already covers this cell, keep it
+      if (activeClue && matchingClues.some((c) => c.id === activeClue.id)) {
+        return;
+      }
+      // Otherwise set to the primary clue for this cell (e.g. 13D for Box 13 at 12-8)
+      setActiveClue(matchingClues[0]);
+    }
+  };
 
   const handleInput = (key: string, val: string) => {
     const char = val.slice(-1).toUpperCase();
@@ -175,6 +359,14 @@ export default function DiwaliCardPage() {
       if (cellMap[up]) inputRefs.current[up]?.focus();
     } else if (/^[a-zA-Z]$/.test(e.key)) {
       setTimeout(() => {
+        // If active clue is down, move down; if across, move right
+        if (activeClue?.direction === "down") {
+          const down = `${r + 1}-${c}`;
+          if (cellMap[down]) {
+            inputRefs.current[down]?.focus();
+            return;
+          }
+        }
         const nextH = `${r}-${c + 1}`;
         const nextV = `${r + 1}-${c}`;
         const target = cellMap[nextH] ? nextH : cellMap[nextV] ? nextV : null;
@@ -227,11 +419,71 @@ export default function DiwaliCardPage() {
     }
   };
 
-  // Request an AI hint from the CogitX Workflow
+  // Request a precise clue hint:
+  // If user is focused on a box (e.g. 13 Down), give hint for that EXACT word!
+  // Otherwise pick the first unsolved clue in the puzzle.
   const requestHint = async () => {
     if (loading) return;
-    setLoading(true);
 
+    // 1. Determine target clue: either current active clue or first incomplete clue
+    let targetClue = activeClue;
+
+    if (!targetClue) {
+      targetClue =
+        CLUES_DATA.find((clue) => {
+          return clue.cells.some(
+            (k, idx) => (letters[k] || "").toUpperCase() !== clue.solution[idx]
+          );
+        }) || CLUES_DATA[0];
+      setActiveClue(targetClue);
+    }
+
+    // 2. Find first empty or incorrect cell in target clue
+    let targetCellKey: string | null = null;
+    let targetSolutionLetter = "";
+    let targetPos = 1;
+
+    for (let i = 0; i < targetClue.cells.length; i++) {
+      const k = targetClue.cells[i];
+      const sol = targetClue.solution[i];
+      if ((letters[k] || "").toUpperCase() !== sol) {
+        targetCellKey = k;
+        targetSolutionLetter = sol;
+        targetPos = i + 1;
+        break;
+      }
+    }
+
+    // If word is already fully solved
+    if (!targetCellKey) {
+      setHintToast({
+        title: `💡 ${targetClue.label} is Already Solved!`,
+        clueText: targetClue.clue,
+        message: `You've already solved "${targetClue.solution}"! Pick another box for a hint.`,
+      });
+      return;
+    }
+
+    // 3. Reveal the letter immediately in the grid and focus it
+    setLetters((prev) => ({
+      ...prev,
+      [targetCellKey!]: targetSolutionLetter,
+    }));
+
+    setHintedCell(targetCellKey);
+    setTimeout(() => setHintedCell(null), 2200);
+
+    inputRefs.current[targetCellKey]?.focus();
+
+    // 4. Show clear clue banner so user knows exactly what word this hint is for
+    setHintToast({
+      title: `💡 Hint for ${targetClue.label} (${targetClue.solution.length} Letters)`,
+      clueText: `"${targetClue.clue}"`,
+      message: `Revealed letter '${targetSolutionLetter}' at position ${targetPos} of ${targetClue.solution.length}!`,
+    });
+
+    // 5. In background, ping CogitX Workflow for AI message/telemetry
+    setLoading(true);
     try {
       const res = await fetch("/api/crossword", {
         method: "POST",
@@ -239,32 +491,21 @@ export default function DiwaliCardPage() {
         body: JSON.stringify({
           action: "hint",
           playerName: "Player",
+          clueId: targetClue.id,
         }),
       });
 
       const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data?.error || data?.details || "Failed to get hint.");
+      if (data?.aiMessage) {
+        setHintToast({
+          title: `💡 Hint for ${targetClue.label}`,
+          clueText: `"${targetClue.clue}"`,
+          message: data.aiMessage,
+        });
       }
-
-      if (data.hint?.key && data.hint?.letter) {
-        setLetters((prev) => ({
-          ...prev,
-          [data.hint.key]: data.hint.letter,
-        }));
-      }
-
-      setHintToast({
-        title: `Hint (${data.hint?.hintsLeft ?? 0} hints left)`,
-        message: data.aiMessage || "Here is a hint for your puzzle!",
-      });
-    } catch (err: any) {
-      console.error("Hint error:", err);
-      setHintToast({
-        title: "Hint Status",
-        message: err.message || "Could not retrieve hint.",
-      });
+    } catch (e) {
+      // Local hint already succeeded, error can be silently logged
+      console.log("CogitX hint ping:", e);
     } finally {
       setLoading(false);
     }
@@ -274,6 +515,8 @@ export default function DiwaliCardPage() {
     setLetters({});
     setCellStatus({});
     setShowSolution(false);
+    setFocusedCell(null);
+    setActiveClue(null);
   };
 
   const printCard = () => {
@@ -282,20 +525,38 @@ export default function DiwaliCardPage() {
     }
   };
 
+  // Determine if a cell is part of the currently active word
+  const isCellInActiveWord = (key: string) => {
+    if (!activeClue) return false;
+    return activeClue.cells.includes(key);
+  };
+
   return (
     <div className="page-wrapper">
-      {/* Diwali Fireworks & Crackers Sound Animation (plays behind modal) */}
+      {/* Diwali Fireworks & Authentic Diwali Crackers Audio */}
       <FireworksOverlay
         active={Boolean(resultModal)}
         soundEnabled={soundEnabled}
       />
 
-      {/* AI Hint Toast Banner */}
+      {/* Clue Hint Toast Notification */}
       {hintToast && (
         <aside className="ai-toast" role="alert">
           <div className="toast-icon">🪔</div>
           <div className="toast-content">
             <h4 className="toast-title">{hintToast.title}</h4>
+            {hintToast.clueText && (
+              <p
+                style={{
+                  fontSize: "12px",
+                  color: "#fde68a",
+                  fontWeight: 600,
+                  marginBottom: "4px",
+                }}
+              >
+                {hintToast.clueText}
+              </p>
+            )}
             <p className="toast-message">{hintToast.message}</p>
           </div>
           <button
@@ -309,7 +570,7 @@ export default function DiwaliCardPage() {
         </aside>
       )}
 
-      {/* Celebratory Result Modal with Diwali Crackers in Background */}
+      {/* Celebratory Result Modal with Fireworks in Background */}
       {resultModal && (
         <div
           className="modal-backdrop"
@@ -339,7 +600,7 @@ export default function DiwaliCardPage() {
                 type="button"
                 className="modal-btn secondary"
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                title="Toggle Crackers Sound"
+                title="Toggle Crackers Audio"
               >
                 {soundEnabled ? "🔊 Sound: On" : "🔇 Sound: Off"}
               </button>
@@ -354,6 +615,14 @@ export default function DiwaliCardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Active Clue Bar (Shown above the card when any cell is clicked) */}
+      {activeClue && (
+        <header className="active-clue-bar" aria-live="polite">
+          <span className="clue-badge">{activeClue.label}</span>
+          <span className="clue-text">{activeClue.clue}</span>
+        </header>
       )}
 
       {/* Exact 1:1 Replica Card */}
@@ -387,10 +656,15 @@ export default function DiwaliCardPage() {
                 ? "incorrect"
                 : "";
 
+            const isWordActive = isCellInActiveWord(key);
+            const isHinted = hintedCell === key;
+
             return (
               <div
                 key={key}
-                className={`cell-slot ${statusClass}`}
+                className={`cell-slot ${statusClass} ${
+                  isWordActive ? "word-active" : ""
+                } ${isHinted ? "hint-pulse" : ""}`}
                 style={{
                   left: `${leftPct}%`,
                   top: `${topPct}%`,
@@ -405,6 +679,7 @@ export default function DiwaliCardPage() {
                   type="text"
                   maxLength={1}
                   value={displayValue}
+                  onFocus={() => handleCellFocus(key)}
                   onChange={(e) => handleInput(key, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(key, e)}
                   aria-label={`Row ${cell.r + 1}, Column ${cell.c + 1}`}
@@ -434,8 +709,13 @@ export default function DiwaliCardPage() {
           className="toolbar-btn accent"
           onClick={requestHint}
           disabled={loading}
+          title={
+            activeClue
+              ? `Get hint for ${activeClue.label}`
+              : "Get a hint for the puzzle"
+          }
         >
-          💡 Hint
+          💡 Hint {activeClue ? `(${activeClue.label})` : ""}
         </button>
 
         <button

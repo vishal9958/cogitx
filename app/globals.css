@@ -166,6 +166,68 @@ body {
   color: #991b1b !important;
 }
 
+/* Selected word & hint highlight */
+.cell-slot.word-active:not(.correct):not(.incorrect) input {
+  background: rgba(254, 240, 138, 0.32);
+}
+
+.cell-slot.hint-pulse input {
+  animation: hintGlow 1.8s ease-out;
+  background: rgba(245, 158, 11, 0.45) !important;
+}
+
+@keyframes hintGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.8), inset 0 0 0 2px #d97706;
+    background: rgba(245, 158, 11, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px rgba(245, 158, 11, 0.6), inset 0 0 0 2px #d97706;
+    background: rgba(245, 158, 11, 0.5);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+
+/* Active Clue Bar (Shows currently selected word clue right above the card) */
+.active-clue-bar {
+  width: 100%;
+  max-width: 730px;
+  background: rgba(17, 24, 39, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #f3f4f6;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.clue-badge {
+  background: #d97706;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.clue-text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #e5e7eb;
+  font-weight: 500;
+}
+
 /* AI Toast Notification (Hint / Status) */
 .ai-toast {
   position: fixed;

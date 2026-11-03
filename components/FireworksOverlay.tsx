@@ -12,142 +12,38 @@ export default function FireworksOverlay({
   soundEnabled = true,
 }: FireworksOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Authentic Diwali Sky-Rocket sound: Whistle/Whoosh launch -> Concussive blast -> Crackles
-  const playDiwaliRocketSound = () => {
-    if (!soundEnabled) return;
+  // Play real authentic Diwali crackers audio uploaded by user
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
-    try {
-      const AudioCtx =
-        window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-
-      if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
-        audioCtxRef.current = new AudioCtx();
-      }
-
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") {
-        ctx.resume();
-      }
-
-      const now = ctx.currentTime;
-
-      // 1. Rocket launch hiss & rising whistle (0 to 0.65s)
-      const noiseLen = Math.floor(ctx.sampleRate * 0.7);
-      const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-      const output = noiseBuf.getChannelData(0);
-      for (let i = 0; i < noiseLen; i++) {
-        output[i] = Math.random() * 2 - 1;
-      }
-      const noiseSrc = ctx.createBufferSource();
-      noiseSrc.buffer = noiseBuf;
-
-      const bandpass = ctx.createBiquadFilter();
-      bandpass.type = "bandpass";
-      bandpass.Q.setValueAtTime(5, now);
-      bandpass.frequency.setValueAtTime(550, now);
-      bandpass.frequency.exponentialRampToValueAtTime(3200, now + 0.6);
-
-      const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.04, now);
-      noiseGain.gain.linearRampToValueAtTime(0.25, now + 0.5);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.68);
-
-      noiseSrc.connect(bandpass);
-      bandpass.connect(noiseGain);
-      noiseGain.connect(ctx.destination);
-      noiseSrc.start(now);
-      noiseSrc.stop(now + 0.7);
-
-      // Whistling tone of rising rocket
-      const whistle = ctx.createOscillator();
-      const whistleGain = ctx.createGain();
-      whistle.type = "sawtooth";
-      whistle.frequency.setValueAtTime(450, now);
-      whistle.frequency.exponentialRampToValueAtTime(2400, now + 0.6);
-
-      whistleGain.gain.setValueAtTime(0.02, now);
-      whistleGain.gain.linearRampToValueAtTime(0.14, now + 0.45);
-      whistleGain.gain.exponentialRampToValueAtTime(0.001, now + 0.62);
-
-      whistle.connect(whistleGain);
-      whistleGain.connect(ctx.destination);
-      whistle.start(now);
-      whistle.stop(now + 0.65);
-
-      // 2. Blast explosion at 0.6s (concussive thump + crackles)
-      setTimeout(() => {
-        if (!ctx || ctx.state === "closed") return;
-        const t = ctx.currentTime;
-
-        // Concussive bass thud (felt in chest)
-        const boomOsc = ctx.createOscillator();
-        const boomGain = ctx.createGain();
-        boomOsc.type = "sine";
-        boomOsc.frequency.setValueAtTime(180, t);
-        boomOsc.frequency.exponentialRampToValueAtTime(32, t + 0.45);
-        boomGain.gain.setValueAtTime(0.65, t);
-        boomGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-        boomOsc.connect(boomGain);
-        boomGain.connect(ctx.destination);
-        boomOsc.start(t);
-        boomOsc.stop(t + 0.55);
-
-        // Explosion body blast
-        const blastLen = Math.floor(ctx.sampleRate * 0.45);
-        const blastBuf = ctx.createBuffer(1, blastLen, ctx.sampleRate);
-        const blastData = blastBuf.getChannelData(0);
-        for (let i = 0; i < blastLen; i++) {
-          blastData[i] = Math.random() * 2 - 1;
-        }
-        const blastSrc = ctx.createBufferSource();
-        blastSrc.buffer = blastBuf;
-        const blastFilter = ctx.createBiquadFilter();
-        blastFilter.type = "lowpass";
-        blastFilter.frequency.setValueAtTime(1500, t);
-        blastFilter.frequency.exponentialRampToValueAtTime(140, t + 0.35);
-
-        const blastGain = ctx.createGain();
-        blastGain.gain.setValueAtTime(0.45, t);
-        blastGain.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
-
-        blastSrc.connect(blastFilter);
-        blastFilter.connect(blastGain);
-        blastGain.connect(ctx.destination);
-        blastSrc.start(t);
-        blastSrc.stop(t + 0.45);
-
-        // Sizzling sparkler crackles (charr-pat-pat-pat)
-        const crackleCount = 10;
-        for (let c = 0; c < crackleCount; c++) {
-          const crackleDelay = 0.06 + Math.random() * 0.45;
-          const cTime = t + crackleDelay;
-          const popLen = Math.floor(ctx.sampleRate * 0.035);
-          const popBuf = ctx.createBuffer(1, popLen, ctx.sampleRate);
-          const pData = popBuf.getChannelData(0);
-          for (let k = 0; k < popLen; k++) {
-            pData[k] =
-              (Math.random() * 2 - 1) *
-              Math.exp(-k / (ctx.sampleRate * 0.004));
-          }
-          const popSrc = ctx.createBufferSource();
-          popSrc.buffer = popBuf;
-
-          const pGain = ctx.createGain();
-          pGain.gain.setValueAtTime(0.12 + Math.random() * 0.15, cTime);
-
-          popSrc.connect(pGain);
-          pGain.connect(ctx.destination);
-          popSrc.start(cTime);
-        }
-      }, 580);
-    } catch (e) {
-      console.warn("Audio note:", e);
+    if (!audioRef.current) {
+      const audio = new Audio("/fireworks.mp3");
+      audio.loop = true;
+      audio.volume = 0.85;
+      audioRef.current = audio;
     }
-  };
 
+    const audio = audioRef.current;
+
+    if (active && soundEnabled) {
+      audio.currentTime = 0;
+      audio.play().catch((err) => {
+        console.log("Audio autoplay note:", err);
+      });
+    } else {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+
+    return () => {
+      audio.pause();
+    };
+  }, [active, soundEnabled]);
+
+  // Canvas-based Diwali Firework display with willow/palm trailing streaks
+  // matches reference image (deep dark sky, glowing rising tracers, radiating falling streamers)
   useEffect(() => {
     if (!active) return;
 
@@ -166,197 +62,224 @@ export default function FireworksOverlay({
     resize();
     window.addEventListener("resize", resize);
 
-    const festiveColors = [
-      "#f59e0b", // Golden Amber
-      "#ef4444", // Ruby Red
-      "#fbbf24", // Golden Yellow
-      "#c026d3", // Royal Violet
-      "#ec4899", // Saffron Pink
-      "#10b981", // Emerald Green
-      "#38bdf8", // Sky Blue
-      "#ffffff", // Glitter White
-      "#f97316", // Deep Orange
+    // Color palettes matching the reference image:
+    // Magenta/Violet, Amber/Orange/Coral, Emerald/Bright Green, Cyan/Electric Blue, Golden Yellow
+    const colorThemes = [
+      { primary: "#d946ef", glow: "#e879f9", light: "#f5d0fe" }, // Violet / Magenta
+      { primary: "#f97316", glow: "#fb923c", light: "#ffedd5" }, // Warm Coral / Orange
+      { primary: "#22c55e", glow: "#4ade80", light: "#dcfce7" }, // Neon Emerald Green
+      { primary: "#06b6d4", glow: "#38bdf8", light: "#e0f2fe" }, // Cyan / Ice Blue
+      { primary: "#eab308", glow: "#fde047", light: "#fef9c3" }, // Golden Amber
+      { primary: "#f43f5e", glow: "#fb7185", light: "#ffe4e6" }, // Festive Ruby Rose
     ];
 
-    interface Particle {
+    interface TrailPoint {
+      x: number;
+      y: number;
+      alpha: number;
+    }
+
+    interface Streamer {
       x: number;
       y: number;
       vx: number;
       vy: number;
       color: string;
+      glowColor: string;
       alpha: number;
       decay: number;
-      radius: number;
-      flicker: boolean;
+      gravity: number;
+      friction: number;
+      lineWidth: number;
+      history: TrailPoint[];
+      maxHistory: number;
+      sparkle: boolean;
     }
 
-    interface SparkTrail {
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      alpha: number;
-      size: number;
-    }
-
-    interface Rocket {
+    interface AscendingRocket {
       x: number;
       y: number;
       targetY: number;
-      vx: number;
       vy: number;
       color: string;
-      sparks: SparkTrail[];
+      glowColor: string;
+      history: { x: number; y: number }[];
     }
 
-    let rockets: Rocket[] = [];
-    let particles: Particle[] = [];
+    let rockets: AscendingRocket[] = [];
+    let streamers: Streamer[] = [];
 
     const launchRocket = () => {
       if (!isRunning) return;
 
-      // Launch points across screen (left, center-left, center-right, right)
+      const theme =
+        colorThemes[Math.floor(Math.random() * colorThemes.length)];
       const x = Math.random() * (canvas.width * 0.8) + canvas.width * 0.1;
       const targetY =
-        Math.random() * (canvas.height * 0.45) + canvas.height * 0.08;
-      const color =
-        festiveColors[Math.floor(Math.random() * festiveColors.length)];
+        Math.random() * (canvas.height * 0.38) + canvas.height * 0.08;
 
       rockets.push({
         x,
-        y: canvas.height + 10,
+        y: canvas.height + 15,
         targetY,
-        vx: (Math.random() - 0.5) * 2.2,
-        vy: -(Math.random() * 3 + 13),
-        color,
-        sparks: [],
+        vy: -(Math.random() * 4 + 14),
+        color: theme.primary,
+        glowColor: theme.glow,
+        history: [],
       });
-
-      playDiwaliRocketSound();
     };
 
-    const explodeRocket = (rocket: Rocket) => {
-      const count = 90;
-      const baseHue = rocket.color;
+    const detonateRocket = (rocket: AscendingRocket) => {
+      const theme =
+        colorThemes.find((t) => t.primary === rocket.color) ||
+        colorThemes[Math.floor(Math.random() * colorThemes.length)];
 
-      for (let i = 0; i < count; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = Math.random() * 7 + 1.5;
-        const color =
-          Math.random() > 0.35
-            ? baseHue
-            : festiveColors[Math.floor(Math.random() * festiveColors.length)];
+      // Radiating streamers count (long weeping willow / palm lines)
+      const streamerCount = Math.floor(Math.random() * 24) + 68;
 
-        particles.push({
+      for (let i = 0; i < streamerCount; i++) {
+        // Uniform radial distribution with slight randomized spread
+        const angle = (Math.PI * 2 * i) / streamerCount + (Math.random() - 0.5) * 0.15;
+        const speed = Math.random() * 5.8 + 2.2;
+        const isAccent = Math.random() > 0.65;
+        const color = isAccent ? theme.glow : theme.primary;
+
+        streamers.push({
           x: rocket.x,
           y: rocket.y,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
           color,
+          glowColor: theme.glow,
           alpha: 1,
-          decay: Math.random() * 0.016 + 0.011,
-          radius: Math.random() * 2.8 + 1.6,
-          flicker: Math.random() > 0.4,
+          decay: Math.random() * 0.009 + 0.007, // Long lived streamers
+          gravity: Math.random() * 0.035 + 0.045, // Downward weeping curve
+          friction: 0.965,
+          lineWidth: Math.random() * 1.5 + 1.2,
+          history: [],
+          maxHistory: Math.floor(Math.random() * 8) + 14,
+          sparkle: Math.random() > 0.4,
         });
       }
     };
 
-    // Rapid initial barrage
+    // Staggered launch initial sequence
     launchRocket();
-    setTimeout(launchRocket, 350);
+    setTimeout(launchRocket, 280);
+    setTimeout(launchRocket, 650);
 
-    const intervalId = setInterval(() => {
+    const launchInterval = setInterval(() => {
       if (!isRunning) return;
       launchRocket();
-      // Occasional simultaneous twin launch
-      if (Math.random() > 0.45) {
-        setTimeout(launchRocket, 250);
+      // Double rocket burst occasionally
+      if (Math.random() > 0.4) {
+        setTimeout(launchRocket, Math.random() * 300 + 150);
       }
-    }, 1200);
+    }, 1100);
 
     const render = () => {
+      // Clear with slight trailing blend for smooth luminous motion
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Update & Draw Rockets with burning fiery exhaust trail
+      // 1. Render ascending rockets (thin vertical glowing tracer lines)
       for (let i = rockets.length - 1; i >= 0; i--) {
         const r = rockets[i];
 
-        // Emit exhaust sparks
-        for (let s = 0; s < 3; s++) {
-          r.sparks.push({
-            x: r.x + (Math.random() - 0.5) * 4,
-            y: r.y + Math.random() * 8,
-            vx: (Math.random() - 0.5) * 1.5,
-            vy: Math.random() * 3 + 1,
-            alpha: 1,
-            size: Math.random() * 2.5 + 1.2,
-          });
-        }
+        r.history.push({ x: r.x, y: r.y });
+        if (r.history.length > 12) r.history.shift();
 
-        r.x += r.vx;
         r.y += r.vy;
 
-        // Render burning spark exhaust
-        for (let s = r.sparks.length - 1; s >= 0; s--) {
-          const sp = r.sparks[s];
-          sp.x += sp.vx;
-          sp.y += sp.vy;
-          sp.alpha -= 0.07;
-          if (sp.alpha <= 0) {
-            r.sparks.splice(s, 1);
-            continue;
-          }
+        // Draw ascending tracer tail
+        if (r.history.length > 1) {
+          ctx.save();
           ctx.beginPath();
-          ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(251, 191, 36, ${sp.alpha})`;
-          ctx.shadowBlur = 6;
-          ctx.shadowColor = "#f59e0b";
-          ctx.fill();
+          ctx.moveTo(r.history[0].x, r.history[0].y);
+          for (let h = 1; h < r.history.length; h++) {
+            ctx.lineTo(r.history[h].x, r.history[h].y);
+          }
+          ctx.strokeStyle = r.glowColor;
+          ctx.lineWidth = 2.2;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = r.color;
+          ctx.stroke();
+          ctx.restore();
         }
 
-        // Rocket head (bright glowing missile)
+        // Rocket tip (glowing spark)
         ctx.save();
         ctx.beginPath();
-        ctx.arc(r.x, r.y, 4, 0, Math.PI * 2);
+        ctx.arc(r.x, r.y, 3, 0, Math.PI * 2);
         ctx.fillStyle = "#ffffff";
         ctx.shadowBlur = 14;
-        ctx.shadowColor = r.color;
+        ctx.shadowColor = r.glowColor;
         ctx.fill();
         ctx.restore();
 
-        // Apex check -> Detonate!
+        // Apex reached -> Detonate into weeping willow streamers!
         if (r.y <= r.targetY || r.vy >= -1) {
-          explodeRocket(r);
+          detonateRocket(r);
           rockets.splice(i, 1);
         }
       }
 
-      // Update & Draw Exploding Particles
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
-        p.vx *= 0.95;
-        p.vy *= 0.95;
-        p.vy += 0.07; // Gravity
-        p.x += p.vx;
-        p.y += p.vy;
-        p.alpha -= p.decay;
+      // 2. Render radiating weeping willow streamers
+      for (let i = streamers.length - 1; i >= 0; i--) {
+        const s = streamers[i];
 
-        if (p.alpha <= 0) {
-          particles.splice(i, 1);
+        // Store trail point
+        s.history.push({ x: s.x, y: s.y, alpha: s.alpha });
+        if (s.history.length > s.maxHistory) {
+          s.history.shift();
+        }
+
+        // Physics: friction + gravity = graceful falling curve
+        s.vx *= s.friction;
+        s.vy *= s.friction;
+        s.vy += s.gravity;
+        s.x += s.vx;
+        s.y += s.vy;
+        s.alpha -= s.decay;
+
+        if (s.alpha <= 0) {
+          streamers.splice(i, 1);
           continue;
         }
 
-        const currentAlpha = p.flicker
-          ? Math.max(0, p.alpha * (0.5 + Math.random() * 0.5))
-          : p.alpha;
+        // Draw the long glowing trail
+        if (s.history.length > 1) {
+          ctx.save();
+          for (let h = 1; h < s.history.length; h++) {
+            const p0 = s.history[h - 1];
+            const p1 = s.history[h];
+            const segmentAlpha = (h / s.history.length) * s.alpha;
+
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.strokeStyle = s.color;
+            ctx.globalAlpha = Math.max(0, segmentAlpha);
+            ctx.lineWidth = s.lineWidth * (h / s.history.length);
+            ctx.lineCap = "round";
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = s.glowColor;
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        // Glowing streamer head
+        const headSparkleAlpha = s.sparkle
+          ? s.alpha * (0.6 + Math.random() * 0.4)
+          : s.alpha;
 
         ctx.save();
-        ctx.globalAlpha = currentAlpha;
+        ctx.globalAlpha = Math.max(0, headSparkleAlpha);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = p.color;
+        ctx.arc(s.x, s.y, s.lineWidth * 0.9, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = s.glowColor;
         ctx.fill();
         ctx.restore();
       }
@@ -368,14 +291,11 @@ export default function FireworksOverlay({
 
     return () => {
       isRunning = false;
-      clearInterval(intervalId);
+      clearInterval(launchInterval);
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener("resize", resize);
-      if (audioCtxRef.current && audioCtxRef.current.state !== "closed") {
-        audioCtxRef.current.close().catch(() => {});
-      }
     };
-  }, [active, soundEnabled]);
+  }, [active]);
 
   if (!active) return null;
 
@@ -388,7 +308,7 @@ export default function FireworksOverlay({
         width: "100vw",
         height: "100vh",
         pointerEvents: "none",
-        zIndex: 75, // Above backdrop (70), right behind modal card (80)
+        zIndex: 75, // Above backdrop (70), behind modal card (80)
       }}
     />
   );

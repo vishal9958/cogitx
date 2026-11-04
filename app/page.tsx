@@ -572,7 +572,7 @@ export default function DiwaliCardPage() {
   const submitCrossword = async () => {
     const filledLettersCount = Object.values(letters).filter((l) => Boolean(l && l.trim())).length;
     if (filledLettersCount === 0) {
-      showToast("Pehle boxes fill karo! Tap any box to start typing.");
+      showToast("Please fill in the boxes first! Tap any square to play.");
       return;
     }
 

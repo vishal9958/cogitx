@@ -1,304 +1,74 @@
 "use client";
 
-import React, { useState, useRef, KeyboardEvent, useEffect } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import FireworksOverlay from "../components/FireworksOverlay";
+import { WORDS, SPARK, SAVE_KEY, CELLS, ORDER, key, WordDef } from "./puzzle";
 
-interface CellDef {
-  r: number;
-  c: number;
-  solution: string;
+const CELL_LIST = [...CELLS.values()];
+const KEY_ROWS = [
+  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+  ["check", "Z", "X", "C", "V", "B", "N", "M", "back"],
+];
+
+/* ── helpers ────────────────────────────────────────────────────── */
+const wordDone = (w: WordDef, L: Record<string, string>) =>
+  w.cells.every((k) => L[k] === CELLS.get(k)?.ans);
+const wordFilled = (w: WordDef, L: Record<string, string>) =>
+  w.cells.every((k) => L[k]);
+const allCorrect = (L: Record<string, string>) =>
+  CELL_LIST.every((c) => L[c.id] === c.ans);
+
+function loadSaved(): { letters: Record<string, string>; solved: boolean } {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return { letters: {}, solved: false };
+    const o = JSON.parse(raw);
+    const letters: Record<string, string> = {};
+    for (const [k, v] of Object.entries(o.letters || {})) {
+      if (CELLS.has(k)) letters[k] = v as string;
+    }
+    return { letters, solved: Boolean(o.solved) };
+  } catch {
+    return { letters: {}, solved: false };
+  }
 }
 
-interface ClueDef {
-  id: string; // e.g. "13D", "1A"
-  number: number;
-  direction: "across" | "down";
-  label: string; // "13 Down"
-  clue: string;
-  solution: string;
-  cells: string[]; // cell keys "r-c"
+function setUnit() {
+  if (typeof window === "undefined") return;
+  const u = Math.floor((Math.min(window.innerWidth, 460) / 390) * 32) / 32;
+  document.documentElement.style.setProperty("--u", u + "px");
 }
-
-const CLUES_DATA: ClueDef[] = [
-  {
-    id: "1A",
-    number: 1,
-    direction: "across",
-    label: "1 Across",
-    clue: "A source of light on a desk or in a window. (4)",
-    solution: "LAMP",
-    cells: ["0-11", "0-12", "0-13", "0-14"],
-  },
-  {
-    id: "2D",
-    number: 2,
-    direction: "down",
-    label: "2 Down",
-    clue: "Calm and quiet, and a wish for the year ahead. (5)",
-    solution: "PEACE",
-    cells: ["0-14", "1-14", "2-14", "3-14", "4-14"],
-  },
-  {
-    id: "3D",
-    number: 3,
-    direction: "down",
-    label: "3 Down",
-    clue: "A hope for something good to come. (4)",
-    solution: "WISH",
-    cells: ["1-7", "2-7", "3-7", "4-7"],
-  },
-  {
-    id: "4D",
-    number: 4,
-    direction: "down",
-    label: "4 Down",
-    clue: "What every light pushes back. (8)",
-    solution: "DARKNESS",
-    cells: ["1-9", "2-9", "3-9", "4-9", "5-9", "6-9", "7-9", "8-9"],
-  },
-  {
-    id: "5A",
-    number: 5,
-    direction: "across",
-    label: "5 Across",
-    clue: "Small clay dish of oil with a wick, lit at dusk on holiday evenings. (4)",
-    solution: "DIYA",
-    cells: ["2-6", "2-7", "2-8", "2-9"],
-  },
-  {
-    id: "6D",
-    number: 6,
-    direction: "down",
-    label: "6 Down",
-    clue: "Colourful floor art made of powder at the entrance of a home. (7)",
-    solution: "RANGOLI",
-    cells: ["2-11", "3-11", "4-11", "5-11", "6-11", "7-11", "8-11"],
-  },
-  {
-    id: "7A",
-    number: 7,
-    direction: "across",
-    label: "7 Across",
-    clue: "To start a fire, or to stir up a feeling. (6)",
-    solution: "KINDLE",
-    cells: ["4-9", "4-10", "4-11", "4-12", "4-13", "4-14"],
-  },
-  {
-    id: "8A",
-    number: 8,
-    direction: "across",
-    label: "8 Across",
-    clue: "Where the lights are hung and the family gathers. (4)",
-    solution: "HOME",
-    cells: ["6-6", "6-7", "6-8", "6-9"],
-  },
-  {
-    id: "9D",
-    number: 9,
-    direction: "down",
-    label: "9 Down",
-    clue: "Wax around a wick, lit for light. (6)",
-    solution: "CANDLE",
-    cells: ["7-13", "8-13", "9-13", "10-13", "11-13", "12-13"],
-  },
-  {
-    id: "10A",
-    number: 10,
-    direction: "across",
-    label: "10 Across",
-    clue: "A celebration marked on the calendar each year. (8)",
-    solution: "FESTIVAL",
-    cells: ["8-7", "8-8", "8-9", "8-10", "8-11", "8-12", "8-13", "8-14"],
-  },
-  {
-    id: "11D",
-    number: 11,
-    direction: "down",
-    label: "11 Down",
-    clue: "Treats shared between neighbours and friends on a holiday. (6)",
-    solution: "SWEETS",
-    cells: ["10-11", "11-11", "12-11", "13-11", "14-11", "15-11"],
-  },
-  {
-    id: "12A",
-    number: 12,
-    direction: "across",
-    label: "12 Across",
-    clue: "The Indian holiday of lights, celebrated around the world each autumn. (6)",
-    solution: "DIWALI",
-    cells: ["11-9", "11-10", "11-11", "11-12", "11-13", "11-14"],
-  },
-  {
-    id: "13D",
-    number: 13,
-    direction: "down",
-    label: "13 Down",
-    clue: "Presents exchanged with family and friends. (5)",
-    solution: "GIFTS",
-    cells: ["12-8", "13-8", "14-8", "15-8", "16-8"],
-  },
-  {
-    id: "14A",
-    number: 14,
-    direction: "across",
-    label: "14 Across",
-    clue: "Soft coloured parts of a flower. (6)",
-    solution: "PETALS",
-    cells: ["15-6", "15-7", "15-8", "15-9", "15-10", "15-11"],
-  },
-];
-
-const CROSSWORD_CELLS: CellDef[] = [
-  // 1 Across: LAMP (row 0, cols 11-14)
-  { r: 0, c: 11, solution: "L" },
-  { r: 0, c: 12, solution: "A" },
-  { r: 0, c: 13, solution: "M" },
-  { r: 0, c: 14, solution: "P" },
-
-  // 2 Down continuation: PEACE (rows 1-4, col 14)
-  { r: 1, c: 14, solution: "E" },
-  { r: 2, c: 14, solution: "A" },
-  { r: 3, c: 14, solution: "C" },
-  { r: 4, c: 14, solution: "E" },
-
-  // 3 Down: WISH (rows 1-4, col 7)
-  { r: 1, c: 7, solution: "W" },
-  { r: 2, c: 7, solution: "I" },
-  { r: 3, c: 7, solution: "S" },
-  { r: 4, c: 7, solution: "H" },
-
-  // 4 Down: DARKNESS (rows 1-8, col 9)
-  { r: 1, c: 9, solution: "D" },
-  { r: 2, c: 9, solution: "A" },
-  { r: 3, c: 9, solution: "R" },
-  { r: 4, c: 9, solution: "K" },
-  { r: 5, c: 9, solution: "N" },
-  { r: 6, c: 9, solution: "E" },
-  { r: 7, c: 9, solution: "S" },
-  { r: 8, c: 9, solution: "S" },
-
-  // 5 Across: DIYA (row 2, cols 6-9)
-  { r: 2, c: 6, solution: "D" },
-  { r: 2, c: 8, solution: "Y" },
-
-  // 6 Down: RANGOLI (rows 2-8, col 11)
-  { r: 2, c: 11, solution: "R" },
-  { r: 3, c: 11, solution: "A" },
-  { r: 4, c: 11, solution: "N" },
-  { r: 5, c: 11, solution: "G" },
-  { r: 6, c: 11, solution: "O" },
-  { r: 7, c: 11, solution: "L" },
-  { r: 8, c: 11, solution: "I" },
-
-  // 7 Across: KINDLE (row 4, cols 9-14)
-  { r: 4, c: 10, solution: "I" },
-  { r: 4, c: 12, solution: "D" },
-  { r: 4, c: 13, solution: "L" },
-
-  // 8 Across: HOME (row 6, cols 6-9)
-  { r: 6, c: 6, solution: "H" },
-  { r: 6, c: 7, solution: "O" },
-  { r: 6, c: 8, solution: "M" },
-
-  // 9 Down: CANDLE (rows 7-12, col 13)
-  { r: 7, c: 13, solution: "C" },
-  { r: 8, c: 13, solution: "A" },
-  { r: 9, c: 13, solution: "N" },
-  { r: 10, c: 13, solution: "D" },
-  { r: 11, c: 13, solution: "L" },
-  { r: 12, c: 13, solution: "E" },
-
-  // 10 Across: FESTIVAL (row 8, cols 7-14)
-  { r: 8, c: 7, solution: "F" },
-  { r: 8, c: 8, solution: "E" },
-  { r: 8, c: 10, solution: "T" },
-  { r: 8, c: 12, solution: "V" },
-  { r: 8, c: 14, solution: "L" },
-
-  // 11 Down: SWEETS (rows 10-15, col 11)
-  { r: 10, c: 11, solution: "S" },
-  { r: 11, c: 11, solution: "W" },
-  { r: 12, c: 11, solution: "E" },
-  { r: 13, c: 11, solution: "E" },
-  { r: 14, c: 11, solution: "T" },
-  { r: 15, c: 11, solution: "S" },
-
-  // 12 Across: DIWALI (row 11, cols 9-14)
-  { r: 11, c: 9, solution: "D" },
-  { r: 11, c: 10, solution: "I" },
-  { r: 11, c: 12, solution: "A" },
-  { r: 11, c: 14, solution: "I" },
-
-  // 13 Down: GIFTS (rows 12-16, col 8)
-  { r: 12, c: 8, solution: "G" },
-  { r: 13, c: 8, solution: "I" },
-  { r: 14, c: 8, solution: "F" },
-  { r: 15, c: 8, solution: "T" },
-  { r: 16, c: 8, solution: "S" },
-
-  // 14 Across: PETALS (row 15, cols 6-11)
-  { r: 15, c: 6, solution: "P" },
-  { r: 15, c: 7, solution: "E" },
-  { r: 15, c: 9, solution: "A" },
-  { r: 15, c: 10, solution: "L" },
-];
-
-const MYSTERY_SHADED_KEYS = [
-  { key: "8-9", num: 1 },  // S
-  { key: "0-14", num: 2 }, // P
-  { key: "2-9", num: 3 },  // A
-  { key: "2-11", num: 4 }, // R
-  { key: "4-9", num: 5 },  // K
-];
-
-// Custom per-box zoom scale so every word has its tailored magnification
-const CLUE_ZOOM_LEVELS: Record<string, number> = {
-  // 4-letter short words -> deeper zoom
-  "1A": 2.45,
-  "3D": 2.38,
-  "5A": 2.45,
-  "8A": 2.45,
-
-  // 5-letter medium words
-  "2D": 2.2,
-  "13D": 2.2,
-
-  // 6-letter medium words
-  "7A": 2.12,
-  "9D": 2.08,
-  "11D": 2.08,
-  "12A": 2.08,
-  "14A": 2.12,
-
-  // 7-8 letter long words -> wider view so whole word fits
-  "4D": 1.78,
-  "6D": 1.88,
-  "10A": 1.82,
-};
 
 export default function DiwaliCardPage() {
-  const [letters, setLetters] = useState<Record<string, string>>({});
-  const [cellStatus, setCellStatus] = useState<Record<string, string>>({});
-  const [showSolution, setShowSolution] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [hintsLeft, setHintsLeft] = useState(3);
+  const saved = useRef<{ letters: Record<string, string>; solved: boolean } | null>(null);
+  if (!saved.current) saved.current = loadSaved();
 
-  // Active cell, zoom, camera swoop, and word tracking
-  const [focusedCell, setFocusedCell] = useState<string | null>(null);
-  const [activeClue, setActiveClue] = useState<ClueDef | null>(null);
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [isSwooping, setIsSwooping] = useState(false);
-  const [hintedCell, setHintedCell] = useState<string | null>(null);
+  /* state */
+  const [letters, setLetters] = useState<Record<string, string>>(saved.current.letters);
+  const [solved, setSolved] = useState<boolean>(saved.current.solved);
+  const [wordIdx, setWordIdx] = useState<number | null>(0); // opens on 1 Across
+  const [idx, setIdx] = useState<number>(0);
+  const [focused, setFocused] = useState<boolean>(false);
+  const [wrong, setWrong] = useState<Set<string>>(() => new Set());
+  const [winTick, setWinTick] = useState<number>(0);
+  const [cardState, setCardState] = useState<{ text: string; bad: boolean }>({ text: "", bad: false });
+  const [stageTransform, setStageTransform] = useState<string>("");
+  const [cardTop, setCardTop] = useState<string | null>(null);
+  const [caretLeft, setCaretLeft] = useState<number>(40);
+  const [pressed, setPressed] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: "", show: false });
+  const [clearArmed, setClearArmed] = useState<boolean>(false);
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
+  // App API, audio and fireworks states
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [hintsLeft, setHintsLeft] = useState<number>(3);
+  const [loading, setLoading] = useState<boolean>(false);
   const [hintToast, setHintToast] = useState<{
     title: string;
     clueText?: string;
     message: string;
   } | null>(null);
-
   const [resultModal, setResultModal] = useState<{
     wordsCorrect: number;
     wordsTotal: number;
@@ -307,457 +77,531 @@ export default function DiwaliCardPage() {
     aiMessage: string;
   } | null>(null);
 
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  /* refs */
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const keysRef = useRef<HTMLDivElement | null>(null);
+  const probeRef = useRef<HTMLDivElement | null>(null);
+  const cellRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const zoomRef = useRef<{ base: { left: number; top: number }; tx: number; ty: number; s: number } | null>(null);
+  const toastT = useRef<NodeJS.Timeout | number>(0);
+  const clearT = useRef<NodeJS.Timeout | number>(0);
 
-  const cellMap = useRef<Record<string, CellDef>>(
-    CROSSWORD_CELLS.reduce((acc, cell) => {
-      acc[`${cell.r}-${cell.c}`] = cell;
-      return acc;
-    }, {} as Record<string, CellDef>)
-  ).current;
+  const word = wordIdx == null ? null : WORDS[wordIdx];
 
-  // Build mapping from cellKey -> matching ClueDef[]
-  const cellToClues = useRef<Record<string, ClueDef[]>>(
-    (() => {
-      const map: Record<string, ClueDef[]> = {};
-      CLUES_DATA.forEach((clue) => {
-        clue.cells.forEach((cellKey) => {
-          if (!map[cellKey]) map[cellKey] = [];
-          map[cellKey].push(clue);
-        });
-      });
-      return map;
-    })()
-  ).current;
+  // always-fresh snapshot for timers / global listeners
+  const latest = useRef<{
+    letters: Record<string, string>;
+    solved: boolean;
+    wordIdx: number | null;
+    idx: number;
+    focused: boolean;
+  }>({
+    letters,
+    solved,
+    wordIdx,
+    idx,
+    focused,
+  });
+  latest.current = { letters, solved, wordIdx, idx, focused };
 
-  const acrossClues = CLUES_DATA.filter((c) => c.direction === "across");
-  const downClues = CLUES_DATA.filter((c) => c.direction === "down");
+  /* ── unit ───────────────────────────────────────────────────── */
+  useLayoutEffect(() => {
+    setUnit();
+  }, []);
 
-  // Select a clue, smoothly swoop/zoom, and focus target cell
-  const handleSelectAndZoomClue = (clue: ClueDef) => {
-    if (isZoomed && activeClue && activeClue.id !== clue.id) {
-      // Camera swoop: slightly dip zoom out mid-flight while panning, then zoom back in
-      setIsSwooping(true);
-      setActiveClue(clue);
-      setTimeout(() => {
-        setIsSwooping(false);
-      }, 210);
-    } else {
-      setActiveClue(clue);
-      setIsZoomed(true);
-    }
-
-    // Pick first empty/unsolved cell, or fallback to first cell
-    const targetCell =
-      clue.cells.find((k, idx) => (letters[k] || "").toUpperCase() !== clue.solution[idx]) ||
-      clue.cells[0];
-
-    if (targetCell) {
-      setFocusedCell(targetCell);
-      setTimeout(() => {
-        inputRefs.current[targetCell]?.focus();
-      }, 60);
-    }
-  };
-
-  // Exit zoomed view smoothly
-  const handleDoneZoom = (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setIsZoomed(false);
-    setIsSwooping(false);
-  };
-
-  // Cycle to previous clue in popover
-  const handlePrevClue = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!activeClue) return;
-    const currIdx = CLUES_DATA.findIndex((c) => c.id === activeClue.id);
-    const prevIdx = (currIdx - 1 + CLUES_DATA.length) % CLUES_DATA.length;
-    handleSelectAndZoomClue(CLUES_DATA[prevIdx]);
-  };
-
-  // Cycle to next clue in popover
-  const handleNextClue = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!activeClue) return;
-    const currIdx = CLUES_DATA.findIndex((c) => c.id === activeClue.id);
-    const nextIdx = (currIdx + 1) % CLUES_DATA.length;
-    handleSelectAndZoomClue(CLUES_DATA[nextIdx]);
-  };
-
-  // Calculate zoom transform with tailored magnification per clue and camera swoop
-  const getZoomTransform = (clue: ClueDef | null) => {
-    if (!clue || !isZoomed) {
-      return { x: 0, y: 0, scale: 1 };
-    }
-
-    // Custom tailored zoom level for this specific clue
-    let targetScale = CLUE_ZOOM_LEVELS[clue.id] || 2.15;
-    if (typeof window !== "undefined" && window.innerWidth < 640) {
-      targetScale *= 0.85;
-    }
-
-    // Dip scale down during camera swoop when shifting between boxes
-    const S = isSwooping ? targetScale * 0.74 : targetScale;
-
-    let minR = 999, maxR = -1, minC = 999, maxC = -1;
-    clue.cells.forEach((k) => {
-      const [r, c] = k.split("-").map(Number);
-      if (r < minR) minR = r;
-      if (r > maxR) maxR = r;
-      if (c < minC) minC = c;
-      if (c > maxC) maxC = c;
-    });
-
-    const wordCenterXPct = ((43 + ((minC + maxC) / 2 + 0.5) * 32) / 730) * 100;
-    const wordCenterYPct = ((52 + ((minR + maxR) / 2 + 0.5) * 32) / 1024) * 100;
-
-    // Anchor word horizontally at 50% and vertically at ~31% so popover directly below fits in view
-    const tx = 50 - wordCenterXPct * S;
-    const ty = 31 - wordCenterYPct * S;
-
-    return { x: tx, y: ty, scale: S };
-  };
-
-  // Calculate popover position in CARD-FRAME (unscaled) coordinates.
-  // The popover lives OUTSIDE the zoomed card-viewport so it renders at normal size.
-  // We apply the same pan+scale maths in reverse to find where the word bottom lands
-  // after the viewport transform, then place the popover there.
-  const getPopoverPosition = (clue: ClueDef | null, zoom: { x: number; y: number; scale: number }) => {
-    if (!clue) return { leftPct: 50, topPct: 50 };
-
-    let maxR = -1, minC = 999, maxC = -1;
-    clue.cells.forEach((k) => {
-      const [r, c] = k.split("-").map(Number);
-      if (r > maxR) maxR = r;
-      if (c < minC) minC = c;
-      if (c > maxC) maxC = c;
-    });
-
-    // Raw position of word center X and bottom Y inside the card image (0-100%)
-    const rawCenterXPct = ((43 + ((minC + maxC) / 2 + 0.5) * 32) / 730) * 100;
-    const rawBottomYPct  = ((52 + (maxR + 1) * 32) / 1024) * 100;
-
-    // After viewport transform: translate(zoom.x%, zoom.y%) scale(zoom.scale)
-    // A point at (rawX%, rawY%) moves to (rawX% * scale + tx, rawY% * scale + ty)
-    // But all in % of the card-frame which has height = image height (100%)
-    // We need to convert card-image % to card-frame % (image is 100% wide, height auto)
-    // The card-frame wraps the viewport whose height = natural image height
-    // So card-frame pct == card-image pct for width, but height differs because card-frame also has footer+buttons
-    // The simplest approach: place popover at transformed word bottom, clamped to safe zone
-
-    const transformedCenterXPct = rawCenterXPct * zoom.scale + zoom.x;
-    const transformedBottomYPct  = rawBottomYPct  * zoom.scale + zoom.y;
-
-    return {
-      leftPct:  Math.min(85, Math.max(15, transformedCenterXPct)),
-      topPct:   transformedBottomYPct + 0.8, // just below word bottom
-    };
-  };
-
-  // Global key listener for Escape key to exit zoom smoothly
+  /* ── persistence ────────────────────────────────────────────── */
   useEffect(() => {
-    const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape" && isZoomed) {
-        setIsZoomed(false);
-        setIsSwooping(false);
-      }
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ letters, solved }));
+    } catch {}
+  }, [letters, solved]);
+
+  /* ── toast ──────────────────────────────────────────────────── */
+  const showToast = useCallback((msg: string) => {
+    setToast({ msg, show: true });
+    clearTimeout(toastT.current as any);
+    toastT.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 3600);
+  }, []);
+
+  /* ── zoom (the whole poster moves; the card docks under the word) ── */
+  const positionCaret = useCallback(() => {
+    const z = zoomRef.current;
+    const { wordIdx: wi, idx: i } = latest.current;
+    if (!z || wi == null) return;
+    const w = WORDS[wi];
+    const el = cellRefs.current[w.cells[i]];
+    const card = cardRef.current;
+    const grid = gridRef.current;
+    if (!el || !card || !grid) return;
+    const u = el.offsetWidth;
+    const cx = grid.offsetLeft + el.offsetLeft + u / 2;
+    const sx = z.base.left + z.tx + cx * z.s;
+    const cr = card.getBoundingClientRect();
+    setCaretLeft(Math.max(22, Math.min(cr.width - 22, sx - cr.left)));
+  }, []);
+
+  const layoutZoom = useCallback(() => {
+    const { wordIdx: wi } = latest.current;
+    if (wi == null) return;
+    const w = WORDS[wi];
+    const grid = gridRef.current,
+      stage = stageRef.current,
+      scroller = scrollerRef.current;
+    const keys = keysRef.current,
+      card = cardRef.current,
+      probe = probeRef.current;
+    const first = cellRefs.current[w.cells[0]];
+    const last = cellRefs.current[w.cells[w.cells.length - 1]];
+    if (!grid || !stage || !scroller || !keys || !card || !probe || !first || !last) return;
+
+    const u = first.offsetWidth;
+    const x0 = grid.offsetLeft + first.offsetLeft;
+    const y0 = grid.offsetTop + first.offsetTop;
+    const wordW = grid.offsetLeft + last.offsetLeft + u - x0;
+    const wordH = grid.offsetTop + last.offsetTop + u - y0;
+    const vw = window.innerWidth,
+      vh = window.innerHeight;
+    const sr = scroller.getBoundingClientRect();
+    const base = {
+      left: sr.left + stage.offsetLeft - scroller.scrollLeft,
+      top: sr.top + stage.offsetTop - scroller.scrollTop,
     };
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [isZoomed]);
+    const keysH = keys.offsetHeight,
+      cardH = card.offsetHeight,
+      safeTop = probe.offsetHeight;
+    const topMin = safeTop + 14,
+      bottomMax = vh - keysH - 10,
+      gap = 12;
+    const maxW = Math.min(vw, 560) - 44;
+    const availH = bottomMax - topMin - gap - cardH;
+    let s = Math.min(maxW / wordW, availH / wordH);
+    s = Math.max(1, Math.min(2.6, s));
+    const groupH = wordH * s + gap + cardH;
+    const T = topMin + Math.max(0, (bottomMax - topMin - groupH) * 0.42);
+    const tx = vw / 2 - base.left - (x0 + wordW / 2) * s;
+    const ty = T - base.top - y0 * s;
 
-  // When a cell is focused, pick the matching clue
-  const handleCellFocus = (key: string) => {
-    setFocusedCell(key);
-    const matchingClues = cellToClues[key];
-    if (matchingClues && matchingClues.length > 0) {
-      if (activeClue && matchingClues.some((c) => c.id === activeClue.id)) {
-        return;
-      }
-      setActiveClue(matchingClues[0]);
+    setStageTransform(`translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${s.toFixed(4)})`);
+    setCardTop(Math.min(T + wordH * s + gap, bottomMax - cardH) + "px");
+    zoomRef.current = { base, tx, ty, s };
+    positionCaret();
+  }, [positionCaret]);
+
+  // when the focused word changes (or focus turns on), zoom onto it
+  useEffect(() => {
+    if (!focused || wordIdx == null) return;
+    const id = requestAnimationFrame(layoutZoom);
+    return () => cancelAnimationFrame(id);
+  }, [focused, wordIdx, layoutZoom]);
+
+  // when the cursor moves inside a word, slide the caret
+  useEffect(() => {
+    if (focused) positionCaret();
+  }, [idx, wordIdx, focused, positionCaret]);
+
+  /* ── focus mode ─────────────────────────────────────────────── */
+  const exitFocus = useCallback(() => {
+    if (!latest.current.focused) return;
+    zoomRef.current = null;
+    setStageTransform("");
+    setFocused(false);
+  }, []);
+
+  const focusWord = useCallback((wi: number, i?: number) => {
+    const w = WORDS[wi];
+    if (i == null) {
+      i = w.cells.findIndex((k) => !latest.current.letters[k]);
+      if (i < 0) i = 0;
     }
-  };
+    setWordIdx(wi);
+    setIdx(i);
+    setCardState({ text: "", bad: false });
+    setFocused(true);
+  }, []);
 
-  // Cell click handler: smooth zoom/swoop to word — always zoom to the new clue, never zoom out
-  const handleCellClick = (key: string) => {
-    const matchingClues = cellToClues[key];
-    if (matchingClues && matchingClues.length > 0) {
-      // If the cell belongs to the active clue keep it, otherwise pick the first matching clue
-      const clue =
-        activeClue && matchingClues.some((c) => c.id === activeClue.id)
-          ? activeClue
-          : matchingClues[0];
-
-      // Always zoom/swoop to this clue — never toggle off via cell clicks
-      if (!isZoomed) {
-        setActiveClue(clue);
-        setIsZoomed(true);
-      } else if (activeClue?.id !== clue.id) {
-        // Swoop to the new clue
-        setIsSwooping(true);
-        setActiveClue(clue);
-        setTimeout(() => setIsSwooping(false), 210);
-      }
-      setFocusedCell(key);
-      inputRefs.current[key]?.focus();
-    }
-  };
-
-  const handleInput = (key: string, val: string) => {
-    const char = val.slice(-1).toUpperCase();
-    if (/^[A-Z]?$/.test(char)) {
-      setLetters((prev) => ({ ...prev, [key]: char }));
-      if (cellStatus[key]) {
-        setCellStatus((prev) => {
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
-      }
-
-      // Automatically advance to the next cell in the active word
-      if (char && activeClue) {
-        const currIdx = activeClue.cells.indexOf(key);
-        if (currIdx !== -1 && currIdx + 1 < activeClue.cells.length) {
-          const nextKey = activeClue.cells[currIdx + 1];
-          setTimeout(() => {
-            setFocusedCell(nextKey);
-            inputRefs.current[nextKey]?.focus();
-          }, 10);
+  const nextWord = useCallback(
+    (dir: number, skipFilled?: boolean) => {
+      const { wordIdx: wi, letters: L } = latest.current;
+      if (wi == null) return;
+      const pos = ORDER.indexOf(wi),
+        n = ORDER.length;
+      let pick: number | null = null;
+      if (skipFilled) {
+        for (let step = 1; step < n; step++) {
+          const cand = ORDER[(pos + dir * step + n * n) % n];
+          if (!wordFilled(WORDS[cand], L)) {
+            pick = cand;
+            break;
+          }
         }
       }
+      if (pick == null) pick = ORDER[(pos + dir + n) % n];
+      focusWord(pick);
+    },
+    [focusWord]
+  );
+
+  /* ── input ──────────────────────────────────────────────────── */
+  const putLetter = (id: string, ch: string) => {
+    const next = { ...latest.current.letters };
+    if (ch) next[id] = ch;
+    else delete next[id];
+    latest.current.letters = next;
+    setLetters(next);
+    setWrong((prev) => {
+      if (!prev.has(id)) return prev;
+      const s = new Set(prev);
+      s.delete(id);
+      return s;
+    });
+    return next;
+  };
+
+  const typeLetter = (ch: string) => {
+    const { wordIdx: wi, idx: i } = latest.current;
+    if (wi == null) return;
+    const w = WORDS[wi];
+    const next = putLetter(w.cells[i], ch);
+    if (i < w.cells.length - 1) {
+      setIdx(i + 1);
+    } else if (!allCorrect(next)) {
+      setTimeout(() => {
+        const L = latest.current;
+        if (L.focused && L.wordIdx != null && wordFilled(WORDS[L.wordIdx], L.letters)) {
+          nextWord(1, true);
+        }
+      }, 260);
     }
   };
 
-  const handleKeyDown = (key: string, e: KeyboardEvent<HTMLInputElement>) => {
-    const [r, c] = key.split("-").map(Number);
+  const backspace = () => {
+    const { wordIdx: wi, idx: i, letters: L } = latest.current;
+    if (wi == null) return;
+    const w = WORDS[wi];
+    if (L[w.cells[i]]) putLetter(w.cells[i], "");
+    else if (i > 0) {
+      setIdx(i - 1);
+      putLetter(w.cells[i - 1], "");
+    }
+  };
 
-    if (e.key === "Backspace") {
-      if (!letters[key] && activeClue) {
-        const currIdx = activeClue.cells.indexOf(key);
-        if (currIdx > 0) {
-          e.preventDefault();
-          const prevKey = activeClue.cells[currIdx - 1];
-          setFocusedCell(prevKey);
-          inputRefs.current[prevKey]?.focus();
-          setLetters((prev) => ({ ...prev, [prevKey]: "" }));
+  const checkWord = () => {
+    const { wordIdx: wi, letters: L } = latest.current;
+    if (wi == null) return;
+    const w = WORDS[wi];
+    let bad = 0,
+      empty = 0;
+    const marks = new Set(wrong);
+    w.cells.forEach((k) => {
+      if (!L[k]) empty++;
+      else if (L[k] !== CELLS.get(k)?.ans) {
+        bad++;
+        marks.add(k);
+      }
+    });
+    setWrong(marks);
+    setCardState({
+      bad: Boolean(bad),
+      text: bad
+        ? `${bad} ${bad === 1 ? "letter is" : "letters are"} off`
+        : empty
+        ? `Filled letters look right · ${empty} to go`
+        : "Correct",
+    });
+  };
+
+  /* ── solved detection ───────────────────────────────────────── */
+  useEffect(() => {
+    const all = allCorrect(letters);
+    if (all && !solved) {
+      setSolved(true);
+      const t = setTimeout(() => {
+        exitFocus();
+        setWinTick((n) => n + 1);
+        setResultModal({
+          wordsCorrect: WORDS.length,
+          wordsTotal: WORDS.length,
+          allCorrect: true,
+          trophy: true,
+          aiMessage: "Happy Diwali! You cracked the whole puzzle. Shaded squares spell SPARK!",
+        });
+      }, 320);
+      return () => clearTimeout(t);
+    }
+    if (!all && solved) setSolved(false);
+  }, [letters, solved, exitFocus]);
+
+  /* ── cell and key events ────────────────────────────────────── */
+  const onCellClick = (id: string) => {
+    const cell = CELLS.get(id);
+    if (!cell) return;
+    const { wordIdx: wi, idx: curIdx, focused: isFocused } = latest.current;
+    const w = wi == null ? null : WORDS[wi];
+    const has = { A: cell.A != null, D: cell.D != null };
+
+    if (w && w.cells.includes(id)) {
+      const i = w.cells.indexOf(id);
+      if (i === curIdx && isFocused) {
+        // tapping the active square flips direction
+        const other = w.d === "A" ? cell.D : cell.A;
+        if (other != null) {
+          focusWord(other, WORDS[other].cells.indexOf(id));
           return;
         }
       }
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      const next = `${r}-${c + 1}`;
-      if (cellMap[next]) {
-        setFocusedCell(next);
-        inputRefs.current[next]?.focus();
+      if (!isFocused && wi != null) {
+        focusWord(wi, i);
+        return;
       }
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      const prev = `${r}-${c - 1}`;
-      if (cellMap[prev]) {
-        setFocusedCell(prev);
-        inputRefs.current[prev]?.focus();
-      }
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      const down = `${r + 1}-${c}`;
-      if (cellMap[down]) {
-        setFocusedCell(down);
-        inputRefs.current[down]?.focus();
-      }
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      const up = `${r - 1}-${c}`;
-      if (cellMap[up]) {
-        setFocusedCell(up);
-        inputRefs.current[up]?.focus();
-      }
+      setIdx(i);
+      return;
+    }
+    const dir = w ? w.d : "A";
+    const target =
+      dir === "A" && has.A
+        ? cell.A
+        : dir === "D" && has.D
+        ? cell.D
+        : has.A
+        ? cell.A
+        : cell.D;
+    if (target != null) {
+      focusWord(target, WORDS[target].cells.indexOf(id));
     }
   };
 
-  // Submit and check answers with CogitX Workflow
+  const onKeyPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const b = target.closest(".key") as HTMLElement | null;
+    if (!b) return;
+    e.preventDefault();
+    const k = b.dataset.key;
+    if (!k) return;
+    setPressed(k);
+    setTimeout(() => setPressed((p) => (p === k ? null : p)), 120);
+    if (k === "back") backspace();
+    else if (k === "check") checkWord();
+    else typeLetter(k);
+  };
+
+  const onClear = () => {
+    if (!clearArmed) {
+      setClearArmed(true);
+      clearT.current = setTimeout(() => setClearArmed(false), 3000) as any;
+      return;
+    }
+    clearTimeout(clearT.current as any);
+    setClearArmed(false);
+    latest.current.letters = {};
+    setLetters({});
+    setWrong(new Set());
+    setWinTick(0);
+    setSolved(false);
+    setWordIdx(null);
+    setHintsLeft(3);
+    showToast("Puzzle cleared");
+  };
+
+  // block page scroll while a word is in focus
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const h = (e: TouchEvent) => {
+      if (latest.current.focused) e.preventDefault();
+    };
+    el.addEventListener("touchmove", h, { passive: false });
+    return () => el.removeEventListener("touchmove", h);
+  }, []);
+
+  // hardware keyboard
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      const { focused: f, wordIdx: wi, idx: i } = latest.current;
+      if (!f || wi == null) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const w = WORDS[wi];
+      if (/^[a-z]$/i.test(e.key)) {
+        typeLetter(e.key.toUpperCase());
+        e.preventDefault();
+      } else if (e.key === "Backspace") {
+        backspace();
+        e.preventDefault();
+      } else if (e.key === "Escape") {
+        exitFocus();
+      } else if (e.key === "Tab" || e.key === "Enter") {
+        nextWord(e.shiftKey ? -1 : 1);
+        e.preventDefault();
+      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        if (i < w.cells.length - 1) setIdx(i + 1);
+        e.preventDefault();
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        if (i > 0) setIdx(i - 1);
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [exitFocus, nextWord]);
+
+  // resize
+  useEffect(() => {
+    let t: NodeJS.Timeout | number;
+    const onResize = () => {
+      clearTimeout(t as any);
+      t = setTimeout(() => {
+        setUnit();
+        if (latest.current.focused) layoutZoom();
+      }, 120);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      clearTimeout(t as any);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [layoutZoom]);
+
+  /* ── API Backend Submission ─────────────────────────────────── */
   const submitCrossword = async () => {
-    if (loading) return;
     setLoading(true);
+    let correctCount = 0;
+    const marks = new Set<string>();
+
+    WORDS.forEach((w) => {
+      const wordText = w.cells.map((k) => letters[k] || "").join("");
+      if (wordText.toUpperCase() === w.a) {
+        correctCount++;
+      } else {
+        w.cells.forEach((k) => {
+          if (letters[k] && letters[k] !== CELLS.get(k)?.ans) {
+            marks.add(k);
+          }
+        });
+      }
+    });
+
+    setWrong(marks);
 
     try {
       const res = await fetch("/api/crossword", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "submit",
-          playerName: "Player",
-          grid: letters,
+          action: "validate",
+          letters,
+          wordsSolved: correctCount,
+          totalWords: WORDS.length,
         }),
       });
 
       const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data?.error || data?.details || "Failed to submit.");
-      }
-
-      if (data.cellStatus) {
-        setCellStatus(data.cellStatus);
-      }
-
       setResultModal({
-        wordsCorrect: data.wordsCorrect,
-        wordsTotal: data.wordsTotal,
-        allCorrect: data.allCorrect,
-        trophy: data.trophy,
-        aiMessage: data.aiMessage,
+        wordsCorrect: data.wordsCorrect ?? correctCount,
+        wordsTotal: data.wordsTotal ?? WORDS.length,
+        allCorrect: data.allCorrect ?? correctCount === WORDS.length,
+        trophy: data.trophy ?? correctCount === WORDS.length,
+        aiMessage:
+          data.message ||
+          (correctCount === WORDS.length
+            ? "Congratulations! You've nailed it with a perfect score. You've got a real talent for this!"
+            : `Great effort! You've correctly solved ${correctCount} of ${WORDS.length} words.`),
       });
-    } catch (err: any) {
-      console.error("Submission error:", err);
-      setHintToast({
-        title: "API Status",
-        message: err.message || "Failed to reach CogitX workflow.",
+    } catch {
+      setResultModal({
+        wordsCorrect: correctCount,
+        wordsTotal: WORDS.length,
+        allCorrect: correctCount === WORDS.length,
+        trophy: correctCount === WORDS.length,
+        aiMessage:
+          correctCount === WORDS.length
+            ? "Congratulations! You've nailed it with a perfect score. You've got a real talent for this!"
+            : `Great effort! You've correctly solved ${correctCount} of ${WORDS.length} words.`,
       });
     } finally {
       setLoading(false);
     }
   };
 
-  // Request a precise clue hint (Max 3 hints per game):
-  // If user is focused on a box (e.g. 13 Down), give hint for that EXACT word!
-  // Otherwise pick the first unsolved clue in the puzzle.
+  /* ── AI Clue Hint ────────────────────────────────────────────── */
   const requestHint = async () => {
-    if (loading) return;
-
-    // Check if 3 hint limit reached
     if (hintsLeft <= 0) {
-      setHintToast({
-        title: "💡 No Hints Remaining",
-        message: "You have used all 3 hints! Try solving the rest with the clues.",
-      });
+      showToast("All 3 hints have been used for this game!");
       return;
     }
 
-    // 1. Determine target clue: either current active clue or first incomplete clue
-    let targetClue = activeClue;
-
-    if (!targetClue) {
-      targetClue =
-        CLUES_DATA.find((clue) => {
-          return clue.cells.some(
-            (k, idx) => (letters[k] || "").toUpperCase() !== clue.solution[idx]
-          );
-        }) || CLUES_DATA[0];
-      setActiveClue(targetClue);
-    }
-
-    // 2. Find first empty or incorrect cell in target clue
-    let targetCellKey: string | null = null;
-    let targetSolutionLetter = "";
-    let targetPos = 1;
-
-    for (let i = 0; i < targetClue.cells.length; i++) {
-      const k = targetClue.cells[i];
-      const sol = targetClue.solution[i];
-      if ((letters[k] || "").toUpperCase() !== sol) {
-        targetCellKey = k;
-        targetSolutionLetter = sol;
-        targetPos = i + 1;
-        break;
-      }
-    }
-
-    // If word is already fully solved
-    if (!targetCellKey) {
-      setHintToast({
-        title: `💡 ${targetClue.label} is Already Solved!`,
-        clueText: targetClue.clue,
-        message: `You've already solved "${targetClue.solution}"! Pick another box for a hint.`,
-      });
-      return;
-    }
-
-    // Deduct 1 hint from the 3 total
-    const remaining = hintsLeft - 1;
-    setHintsLeft(remaining);
-
-    // 3. Reveal the letter immediately in the grid and focus it
-    setLetters((prev) => ({
-      ...prev,
-      [targetCellKey!]: targetSolutionLetter,
-    }));
-
-    setHintedCell(targetCellKey);
-    setTimeout(() => setHintedCell(null), 2200);
-
-    inputRefs.current[targetCellKey]?.focus();
-
-    // 4. Show clear clue banner with remaining hint count
-    setHintToast({
-      title: `💡 Hint for ${targetClue.label} (${remaining} left)`,
-      clueText: `"${targetClue.clue}"`,
-      message: `Revealed letter '${targetSolutionLetter}' at position ${targetPos} of ${targetClue.solution.length}!`,
-    });
-
-    // 5. In background, ping CogitX Workflow for AI message/telemetry
+    const currentWord = word || WORDS[0];
     setLoading(true);
+
     try {
       const res = await fetch("/api/crossword", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "hint",
-          playerName: "Player",
-          clueId: targetClue.id,
+          clue: {
+            id: `${currentWord.n}${currentWord.d}`,
+            number: currentWord.n,
+            direction: currentWord.d === "A" ? "across" : "down",
+            label: `${currentWord.n} ${currentWord.d === "A" ? "Across" : "Down"}`,
+            clue: currentWord.clue,
+            solutionLength: currentWord.a.length,
+          },
+          hintsRemaining: hintsLeft - 1,
         }),
       });
 
       const data = await res.json();
-      if (data?.aiMessage) {
-        setHintToast({
-          title: `💡 Hint for ${targetClue.label} (${remaining} left)`,
-          clueText: `"${targetClue.clue}"`,
-          message: data.aiMessage,
-        });
+      setHintsLeft((prev) => Math.max(0, prev - 1));
+
+      // Reveal first unrevealed letter of the active word
+      const emptyIdx = currentWord.cells.findIndex((k) => (letters[k] || "") !== CELLS.get(k)?.ans);
+      if (emptyIdx !== -1) {
+        const targetKey = currentWord.cells[emptyIdx];
+        const correctLetter = CELLS.get(targetKey)?.ans || "";
+        putLetter(targetKey, correctLetter);
       }
-    } catch (e) {
-      // Local hint already succeeded, error can be silently logged
-      console.log("CogitX hint ping:", e);
+
+      setHintToast({
+        title: `Hint for ${currentWord.n} ${currentWord.d === "A" ? "Across" : "Down"}`,
+        clueText: currentWord.clue,
+        message:
+          data.hint ||
+          `This word starts with '${currentWord.a[0]}' and has ${currentWord.a.length} letters.`,
+      });
+
+      setTimeout(() => setHintToast(null), 6000);
+    } catch {
+      setHintsLeft((prev) => Math.max(0, prev - 1));
+      const emptyIdx = currentWord.cells.findIndex((k) => (letters[k] || "") !== CELLS.get(k)?.ans);
+      if (emptyIdx !== -1) {
+        const targetKey = currentWord.cells[emptyIdx];
+        const correctLetter = CELLS.get(targetKey)?.ans || "";
+        putLetter(targetKey, correctLetter);
+      }
+      setHintToast({
+        title: `Hint for ${currentWord.n} ${currentWord.d === "A" ? "Across" : "Down"}`,
+        clueText: currentWord.clue,
+        message: `This word has ${currentWord.a.length} letters and begins with '${currentWord.a[0]}'.`,
+      });
+      setTimeout(() => setHintToast(null), 6000);
     } finally {
       setLoading(false);
     }
   };
 
-  const clearAll = () => {
-    setLetters({});
-    setCellStatus({});
-    setShowSolution(false);
-    setFocusedCell(null);
-    setActiveClue(null);
-    setIsZoomed(false);
-    setIsSwooping(false);
-    setHintsLeft(3);
-  };
-
   const printCard = () => {
-    if (typeof window !== "undefined") {
-      window.print();
-    }
+    if (typeof window !== "undefined") window.print();
   };
 
-  // Determine if a cell is part of the currently active word
-  const isCellInActiveWord = (key: string) => {
-    if (!activeClue) return false;
-    return activeClue.cells.includes(key);
-  };
-
-  const zoomTransform = getZoomTransform(activeClue);
-  const popoverPos = getPopoverPosition(activeClue, zoomTransform);
+  /* ── derived view data ──────────────────────────────────────── */
+  const activeCells = word ? word.cells : [];
 
   return (
-    <div className="page-wrapper">
-      {/* Diwali Fireworks & Authentic Diwali Crackers Audio */}
-      <FireworksOverlay
-        active={Boolean(resultModal)}
-        soundEnabled={soundEnabled}
-      />
+    <>
+      {/* Diwali Fireworks & Authentic Crackers Sound */}
+      <FireworksOverlay active={Boolean(resultModal)} soundEnabled={soundEnabled} />
 
       {/* Clue Hint Toast Notification */}
       {hintToast && (
@@ -766,14 +610,7 @@ export default function DiwaliCardPage() {
           <div className="toast-content">
             <h4 className="toast-title">{hintToast.title}</h4>
             {hintToast.clueText && (
-              <p
-                style={{
-                  fontSize: "12px",
-                  color: "#fde68a",
-                  fontWeight: 600,
-                  marginBottom: "4px",
-                }}
-              >
+              <p style={{ fontSize: "12px", color: "#fde68a", fontWeight: 600, marginBottom: "4px" }}>
                 {hintToast.clueText}
               </p>
             )}
@@ -790,31 +627,17 @@ export default function DiwaliCardPage() {
         </aside>
       )}
 
-      {/* Celebratory Result Modal with Fireworks in Background */}
+      {/* Celebratory Result Modal */}
       {resultModal && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setResultModal(null)}
-          role="dialog"
-          aria-modal="true"
-        >
+        <div className="modal-backdrop" onClick={() => setResultModal(null)} role="dialog" aria-modal="true">
           <div className="result-modal" onClick={(e) => e.stopPropagation()}>
-            <div
-              className={`result-badge ${
-                resultModal.trophy ? "trophy" : "progress"
-              }`}
-            >
-              {resultModal.trophy
-                ? "🎆 Happy Diwali Champion! 🏆"
-                : "✨ Diwali Greetings"}
+            <div className={`result-badge ${resultModal.trophy ? "trophy" : "progress"}`}>
+              {resultModal.trophy ? "🎆 Happy Diwali Champion! 🏆" : "✨ Diwali Greetings"}
             </div>
-
             <div className="result-score">
               {resultModal.wordsCorrect} / {resultModal.wordsTotal}
             </div>
-
             <p className="result-ai-msg">{resultModal.aiMessage}</p>
-
             <div className="modal-actions">
               <button
                 type="button"
@@ -822,14 +645,9 @@ export default function DiwaliCardPage() {
                 onClick={() => setSoundEnabled(!soundEnabled)}
                 title="Toggle Crackers Audio"
               >
-                {soundEnabled ? "🔊 Sound: On" : "🔇 Sound: Off"}
+                {soundEnabled ? "Sound: On" : "Sound: Off"}
               </button>
-
-              <button
-                type="button"
-                className="modal-btn"
-                onClick={() => setResultModal(null)}
-              >
+              <button type="button" className="modal-btn" onClick={() => setResultModal(null)}>
                 Close & Continue
               </button>
             </div>
@@ -837,297 +655,258 @@ export default function DiwaliCardPage() {
         </div>
       )}
 
-      {/* Exact 1:1 Replica Card */}
-      <main
-        ref={containerRef}
-        className={`card-frame ${isZoomed ? "is-zoomed" : ""}`}
-      >
-        {/* Dim overlay sits outside card-viewport so it covers full card at normal scale */}
-        {isZoomed && (
-          <div
-            className="zoom-dim-overlay"
-            onClick={handleDoneZoom}
-            title="Click to zoom out"
-          />
-        )}
-
-        {/* Floating Clue Popover — outside card-viewport so it renders at NORMAL (unzoomed) size */}
-        {isZoomed && activeClue && (
-          <div
-            className="clue-floating-popover"
-            style={{
-              left: `${Math.min(85, Math.max(15, popoverPos.leftPct))}%`,
-              top: `${Math.min(90, Math.max(10, popoverPos.topPct))}%`,
-              transform: "translate(-50%, 0)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="popover-caret" />
-            <div className="popover-header">
-              <button
-                type="button"
-                className="popover-nav-btn"
-                onClick={handlePrevClue}
-                title="Previous Clue"
-              >
-                ‹
-              </button>
-              <div className="popover-title-group">
-                <span className="popover-clue-label">
-                  {activeClue.number} {activeClue.direction.toUpperCase()}
-                </span>
-                <span className="popover-clue-letters">
-                  {activeClue.solution.length} letters
-                </span>
-              </div>
-              <button
-                type="button"
-                className="popover-nav-btn"
-                onClick={handleNextClue}
-                title="Next Clue"
-              >
-                ›
-              </button>
-              <button
-                type="button"
-                className="popover-done-btn"
-                onClick={handleDoneZoom}
-              >
-                Done
-              </button>
-            </div>
-            <div className="popover-clue-body">{activeClue.clue}</div>
-          </div>
-        )}
-
+      {/* MAIN POSTER SCROLLER */}
+      <div id="scroller" ref={scrollerRef} className={focused ? "lock" : ""}>
         <div
-          className="card-viewport"
-          style={{
-            transform: isZoomed
-              ? `translate(${zoomTransform.x}%, ${zoomTransform.y}%) scale(${zoomTransform.scale})`
-              : "translate(0%, 0%) scale(1)",
-            transformOrigin: "0 0",
-            transition: "transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)",
-          }}
+          id="stage"
+          ref={stageRef}
+          className={focused ? "focus" : ""}
+          style={stageTransform ? { transform: stageTransform } : undefined}
         >
-          <img
-            src="/diwali-card.jpg"
-            alt="CogitX AI Diwali Crossword Greeting"
-            className="card-image"
-          />
+          {/* LAYER 1 · PAPER POSTER */}
+          <div id="paper">
+            <div className="zone-grid">
+              <div className="bggrid" />
+              <h1 className="hl hl-fire">Fire up your neurons</h1>
+              <img className="ink sweets" src="/assets/sweets.png" alt="Sweets" />
+              <img className="ink diyas" src="/assets/diyas.png" alt="Diyas" />
+              <p className="hl hl-light">Light up life</p>
+              <img className="ink lantern" src="/assets/lantern.png" alt="Lantern" />
+              <p className="hl hl-kindle">Kindle your happiness</p>
+              <img className="ink toran" src="/assets/toran.png" alt="Toran" />
+              <p className="hl hl-every">Everything that makes Diwali</p>
+              <img className="ink rangoli" src="/assets/rangoli.png" alt="Rangoli" />
+              <img className="ink crackers" src="/assets/crackers.png" alt="Crackers" />
+              <img className="ink family" src="/assets/family.png" alt="Family" />
+              <img className="ink gift" src="/assets/gift.png" alt="Gift" />
+              <p className="hl hl-happy">
+                Happy Diwali from <span>CogitX</span>
+              </p>
+            </div>
 
-          {/* Interactive Crossword Input Overlay */}
-          <section
-            className="interactive-overlay"
-            aria-label="Crossword Grid Cells"
-          >
-            {CROSSWORD_CELLS.map((cell) => {
-              const key = `${cell.r}-${cell.c}`;
-              const leftPct = ((43 + cell.c * 32) / 730) * 100;
-              const topPct = ((52 + cell.r * 32) / 1024) * 100;
-              const widthPct = (32 / 730) * 100;
-              const heightPct = (32 / 1024) * 100;
+            <div className="zone-text">
+              <p className="spark-line">
+                <span className="t">
+                  The shaded squares, in order, spell what every lamp and every good idea begins with.
+                </span>
+                <span className={"spark-boxes" + (solved ? " win" : "")}>
+                  {SPARK.map(([r, c], i) => {
+                    const l = letters[key(r, c)] || "";
+                    return (
+                      <b key={i} data-i={i + 1} className={l ? "full" : ""}>
+                        {l}
+                      </b>
+                    );
+                  })}
+                </span>
+              </p>
+              <hr />
+              <h2 className="thanks">Thank you for being part of CogitX AI's journey.</h2>
+              <p className="wish">Wishing you and your loved ones a Diwali full of light, joy and new beginnings.</p>
+              <p className="wish">Here's to the sparks that light up the year ahead.</p>
 
-              const displayValue = showSolution
-                ? cell.solution
-                : letters[key] || "";
+              <div className="clues">
+                {[
+                  ["A", "Across"],
+                  ["D", "Down"],
+                ].map(([d, label]) => (
+                  <section key={d}>
+                    <h3>{label}</h3>
+                    <ol className="cl">
+                      {WORDS.filter((w) => w.d === d).map((w) => (
+                        <li
+                          key={w.i}
+                          tabIndex={0}
+                          className={(wordDone(w, letters) ? "done " : "") + (wordIdx === w.i ? "now" : "")}
+                          onClick={() => focusWord(w.i)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              focusWord(w.i);
+                            }
+                          }}
+                        >
+                          <b>{w.n}</b>
+                          <span>
+                            {w.clue} ({w.a.length})
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                ))}
+              </div>
 
-              const statusClass =
-                cellStatus[key] === "correct"
-                  ? "correct"
-                  : cellStatus[key] === "wrong"
-                  ? "incorrect"
-                  : "";
+              <hr />
+              <footer>
+                <img className="logo" src="/assets/logo.png" alt="CogitX" />
+                <a href="https://www.cogitx.ai" target="_blank" rel="noopener noreferrer">
+                  www.cogitx.ai
+                </a>
+              </footer>
 
-              const isWordActive = isCellInActiveWord(key);
-              const isHinted = hintedCell === key;
-              const isFocused = focusedCell === key;
+              <p className="tiny">
+                <button id="clear" type="button" className={clearArmed ? "arm" : ""} onClick={onClear}>
+                  {clearArmed ? "Tap again to clear" : "Clear puzzle"}
+                </button>
+                {" · Tap any square to play. Progress saves on this device."}
+              </p>
 
-              // Find if this cell is the first cell of any clue (for corner number display)
-              const clueStartingHere = CLUES_DATA.find((cl) => cl.cells[0] === key);
+              {/* ACTION BUTTONS (SUBMIT & CHECK, HINT, SOUND, CLEAR, PRINT) */}
+              <div className="actions-dock" aria-label="Game Actions">
+                <button
+                  type="button"
+                  className="action-btn primary"
+                  onClick={submitCrossword}
+                  disabled={loading}
+                >
+                  {loading ? "Checking..." : "Submit & Check"}
+                </button>
 
+                <button
+                  type="button"
+                  className="action-btn hint"
+                  onClick={requestHint}
+                  disabled={loading || hintsLeft <= 0}
+                  title={
+                    hintsLeft <= 0
+                      ? "All 3 hints used"
+                      : word
+                      ? `Get hint for ${word.n} ${word.d === "A" ? "Across" : "Down"} (${hintsLeft} left)`
+                      : `Get a hint (${hintsLeft} left)`
+                  }
+                >
+                  Hint {word ? `(${word.n}${word.d})` : ""} [{hintsLeft}/3]
+                </button>
+
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={() => setSoundEnabled(!soundEnabled)}
+                  title="Toggle Cracker Audio"
+                >
+                  {soundEnabled ? "Sound: On" : "Sound: Off"}
+                </button>
+
+                <button type="button" className="action-btn" onClick={onClear}>
+                  Clear
+                </button>
+
+                <button type="button" className="action-btn" onClick={printCard}>
+                  Print / PDF
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* LAYER 2 · SCRIM (Fades non-active cells & background when focused) */}
+          <div id="scrim" onClick={exitFocus} />
+
+          {/* LAYER 3 · GRID CELLS */}
+          <div id="grid" ref={gridRef} role="grid" aria-label="Crossword grid">
+            {CELL_LIST.map((cell) => {
+              const on = activeCells.includes(cell.id);
+              const cur = on && activeCells[idx] === cell.id;
+              const cls =
+                "cell" +
+                (cell.spark ? " shade" : "") +
+                (on ? " on" : "") +
+                (cur ? " cur" : "") +
+                (wrong.has(cell.id) ? " wrong" : "") +
+                (cell.spark && winTick > 0 ? " win" : "");
               return (
                 <div
-                  key={key}
-                  className={`cell-slot ${statusClass} ${
-                    isWordActive ? "word-active" : ""
-                  } ${isHinted ? "hint-pulse" : ""} ${
-                    isFocused ? "is-focused" : ""
-                  }`}
-                  style={{
-                    left: `${leftPct}%`,
-                    top: `${topPct}%`,
-                    width: `${widthPct}%`,
-                    height: `${heightPct}%`,
+                  key={cell.spark && winTick > 0 ? cell.id + "#" + winTick : cell.id}
+                  ref={(el) => {
+                    if (el) cellRefs.current[cell.id] = el;
                   }}
-                  onClick={() => handleCellClick(key)}
+                  className={cls}
+                  data-k={cell.id}
+                  role="gridcell"
+                  tabIndex={-1}
+                  style={{
+                    left: `calc(${cell.c * 32} * var(--u))`,
+                    top: `calc(${cell.r * 32} * var(--u))`,
+                  }}
+                  onClick={() => onCellClick(cell.id)}
                 >
-                  {clueStartingHere && (
-                    <span className="cell-corner-num">{clueStartingHere.number}</span>
-                  )}
-                  <input
-                    ref={(el) => {
-                      inputRefs.current[key] = el;
-                    }}
-                    type="text"
-                    maxLength={1}
-                    value={displayValue}
-                    onFocus={() => handleCellFocus(key)}
-                    onChange={(e) => handleInput(key, e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(key, e)}
-                    aria-label={`Row ${cell.r + 1}, Column ${cell.c + 1}`}
-                    autoCapitalize="characters"
-                    autoComplete="off"
-                    spellCheck="false"
-                  />
+                  {cell.num ? <span className="n">{cell.num}</span> : null}
+                  {cell.spark ? <span className="s">{cell.spark}</span> : null}
+                  <span className="l">{letters[cell.id] || ""}</span>
                 </div>
               );
             })}
-          </section>
-
-          {/* 5 Shaded Mystery Squares Row (SPARK) */}
-          <div
-            className="mystery-squares-row"
-            aria-label="Mystery word shaded squares"
-          >
-            {MYSTERY_SHADED_KEYS.map((item) => (
-              <div key={item.key} className="mystery-square-box">
-                <span className="mystery-square-letter">
-                  {letters[item.key] || ""}
-                </span>
-                <span className="mystery-square-num">{item.num}</span>
-              </div>
-            ))}
           </div>
-
-          {/* Interactive Bottom Clues List Overlay (Across & Down) */}
-          <section
-            className="clues-card-overlay"
-            aria-label="Interactive Crossword Clues"
-          >
-            <div className="clues-col across-col">
-              <h3 className="clues-heading">ACROSS</h3>
-              <div className="clues-list">
-                {acrossClues.map((clue) => {
-                  const isActive = activeClue?.id === clue.id;
-                  return (
-                    <button
-                      key={clue.id}
-                      type="button"
-                      className={`clue-row-btn ${isActive ? "active" : ""}`}
-                      onClick={() => handleSelectAndZoomClue(clue)}
-                      title={`Select ${clue.label}`}
-                    >
-                      <span className="clue-num-tag">{clue.number}</span>
-                      <span className="clue-body-text">{clue.clue}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="clues-col down-col">
-              <h3 className="clues-heading">DOWN</h3>
-              <div className="clues-list">
-                {downClues.map((clue) => {
-                  const isActive = activeClue?.id === clue.id;
-                  return (
-                    <button
-                      key={clue.id}
-                      type="button"
-                      className={`clue-row-btn ${isActive ? "active" : ""}`}
-                      onClick={() => handleSelectAndZoomClue(clue)}
-                      title={`Select & Zoom ${clue.label}`}
-                    >
-                      <span className="clue-num-tag">{clue.number}</span>
-                      <span className="clue-body-text">{clue.clue}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
         </div>
+      </div>
 
-        {/* Card Footer Subtitle (Progress saves on this device) */}
-        <div className="card-footer-note">
-          {isZoomed && (
+      {/* LAYER 4 · CLUE CARD (Floating underneath the focused word with caret) */}
+      <div
+        id="card"
+        ref={cardRef}
+        className={"card" + (focused ? " show" : "")}
+        role="dialog"
+        aria-live="polite"
+        style={cardTop ? { top: cardTop } : undefined}
+      >
+        <div className="caret" style={{ left: caretLeft + "px" }} />
+        <div className="card-top">
+          <button className="nav" type="button" aria-label="Previous word" onClick={() => nextWord(-1)}>
+            ‹
+          </button>
+          <div className="eyebrow">
+            <b>{word ? `${word.n} ${word.d === "A" ? "Across" : "Down"}` : ""}</b>
+            <span>{word ? `${word.a.length} letters` : ""}</span>
+          </div>
+          <button className="nav" type="button" aria-label="Next word" onClick={() => nextWord(1)}>
+            ›
+          </button>
+          <button className="done" type="button" onClick={exitFocus}>
+            Done
+          </button>
+        </div>
+        <p className="clue">
+          {word ? (
             <>
-              <button
-                type="button"
-                className="footer-reset-zoom-btn"
-                onClick={handleDoneZoom}
-                title="Zoom out to full view"
-              >
-                Reset Zoom
-              </button>
-              <span className="footer-dot">·</span>
+              {word.clue} <span className="len">({word.a.length})</span>
             </>
-          )}
-          <button
-            type="button"
-            className="footer-clear-btn"
-            onClick={clearAll}
-          >
-            Clear puzzle
-          </button>
-          <span className="footer-dot">·</span>
-          <span>Tap any square to play. Progress saves on this device.</span>
-        </div>
+          ) : null}
+        </p>
+        <p className={"state" + (cardState.bad ? " bad" : "")}>{cardState.text}</p>
+      </div>
 
-        {/* Card Form Action Buttons (Docked inside the card frame at the bottom) */}
-        <footer className="card-form-actions" aria-label="Game Actions">
-          <button
-            type="button"
-            className="form-action-btn primary"
-            onClick={submitCrossword}
-            disabled={loading}
-          >
-            {loading ? "Checking..." : "Submit & Check"}
-          </button>
+      {/* LAYER 5 · KEYBOARD (Smoothly slides up in focus mode) */}
+      <div
+        id="keys"
+        ref={keysRef}
+        className={"keys" + (focused ? " show" : "")}
+        aria-label="Keyboard"
+        onPointerDown={onKeyPointerDown}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {KEY_ROWS.map((row, ri) => (
+          <div className="krow" key={ri}>
+            {ri === 1 && <span className="sp" />}
+            {row.map((k) => (
+              <button
+                key={k}
+                type="button"
+                data-key={k}
+                className={"key" + (k.length > 1 ? " wide" : "") + (pressed === k ? " press" : "")}
+                aria-label={k === "back" ? "Backspace" : k === "check" ? "Check word" : k}
+              >
+                {k === "back" ? "⌫" : k === "check" ? "Check" : k}
+              </button>
+            ))}
+            {ri === 1 && <span className="sp" />}
+          </div>
+        ))}
+      </div>
 
-          <button
-            type="button"
-            className="form-action-btn hint"
-            onClick={requestHint}
-            disabled={loading || hintsLeft <= 0}
-            title={
-              hintsLeft <= 0
-                ? "All 3 hints used"
-                : activeClue
-                ? `Get hint for ${activeClue.label} (${hintsLeft} left)`
-                : `Get a hint (${hintsLeft} left)`
-            }
-          >
-            Hint {activeClue ? `(${activeClue.label})` : ""} [{hintsLeft}/3]
-          </button>
-
-          <button
-            type="button"
-            className="form-action-btn secondary"
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            title="Toggle Cracker Audio"
-          >
-            {soundEnabled ? "Sound: On" : "Sound: Off"}
-          </button>
-
-          <button
-            type="button"
-            className="form-action-btn secondary"
-            onClick={clearAll}
-          >
-            Clear
-          </button>
-
-          <button
-            type="button"
-            className="form-action-btn secondary"
-            onClick={printCard}
-          >
-            Print / PDF
-          </button>
-        </footer>
-      </main>
-    </div>
+      <div id="toast" role="status" className={toast.show ? "show" : ""}>
+        {toast.msg}
+      </div>
+      <div id="probe" ref={probeRef} />
+    </>
   );
 }

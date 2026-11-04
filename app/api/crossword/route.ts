@@ -54,11 +54,14 @@ export async function POST(req: NextRequest) {
       const uiGrid: Record<string, string> = body?.grid || {};
       const answers: Record<string, string> = {};
 
-      // Convert UI grid key "r-c" (where c is 6..14) to workflow coordinate "r,c-6"
+      // Convert UI grid key (either "r,c" or "r-c") to workflow coordinate "r,workflowCol" (0..8)
       for (const [key, letter] of Object.entries(uiGrid)) {
         if (!letter || !letter.trim()) continue;
-        const [r, c] = key.split("-").map(Number);
-        const workflowCol = c - 6;
+        const parts = key.includes(",") ? key.split(",") : key.split("-");
+        const r = parseInt(parts[0], 10);
+        const rawC = parseInt(parts[1], 10);
+        if (isNaN(r) || isNaN(rawC)) continue;
+        const workflowCol = rawC >= 6 ? rawC - 6 : rawC;
         if (workflowCol >= 0 && workflowCol <= 8) {
           answers[`${r},${workflowCol}`] = letter.trim().toUpperCase();
         }
@@ -130,13 +133,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "submit") {
-      // Map cell_status keys from "r,c" (0..8) back to UI "r-c" (6..14)
+      // Map cell_status keys from "r,c" (0..8) back to UI keys
       const mappedCellStatus: Record<string, string> = {};
       if (decodedResult?.cell_status) {
         for (const [coord, status] of Object.entries(decodedResult.cell_status)) {
           const [rStr, cStr] = coord.split(",");
           const r = parseInt(rStr, 10);
           const c = parseInt(cStr, 10);
+          mappedCellStatus[`${r},${c}`] = status as string;
+          mappedCellStatus[`${r}-${c}`] = status as string;
           mappedCellStatus[`${r}-${c + 6}`] = status as string;
         }
       }

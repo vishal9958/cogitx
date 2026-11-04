@@ -2,7 +2,85 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import FireworksOverlay from "../components/FireworksOverlay";
-import { WORDS, SPARK, SAVE_KEY, CELLS, ORDER, key, WordDef } from "./puzzle";
+
+/* ── Crossword Definitions (Exact 1:1 replica from cogitx-diwali) ── */
+interface WordDef {
+  n: number;
+  d: "A" | "D";
+  r: number;
+  c: number;
+  a: string;
+  clue: string;
+  i?: number;
+  cells?: string[];
+}
+
+const WORDS: WordDef[] = [
+  { n: 1,  d: "A", r: 0,  c: 5, a: "LAMP",     clue: "A source of light on a desk or in a window." },
+  { n: 5,  d: "A", r: 2,  c: 0, a: "DIYA",     clue: "Small clay dish of oil with a wick, lit at dusk on holiday evenings." },
+  { n: 7,  d: "A", r: 4,  c: 3, a: "KINDLE",   clue: "To start a fire, or to stir up a feeling." },
+  { n: 8,  d: "A", r: 6,  c: 0, a: "HOME",     clue: "Where the lights are hung and the family gathers." },
+  { n: 10, d: "A", r: 8,  c: 1, a: "FESTIVAL", clue: "A celebration marked on the calendar each year." },
+  { n: 12, d: "A", r: 11, c: 3, a: "DIWALI",   clue: "The Indian holiday of lights, celebrated around the world each autumn." },
+  { n: 14, d: "A", r: 15, c: 0, a: "PETALS",   clue: "Soft coloured parts of a flower." },
+  { n: 2,  d: "D", r: 0,  c: 8, a: "PEACE",    clue: "Calm and quiet, and a wish for the year ahead." },
+  { n: 3,  d: "D", r: 1,  c: 1, a: "WISH",     clue: "A hope for something good to come." },
+  { n: 4,  d: "D", r: 1,  c: 3, a: "DARKNESS", clue: "What every light pushes back." },
+  { n: 6,  d: "D", r: 2,  c: 5, a: "RANGOLI",  clue: "Colourful floor art made of powder at the entrance of a home." },
+  { n: 9,  d: "D", r: 7,  c: 7, a: "CANDLE",   clue: "Wax around a wick, lit for light." },
+  { n: 11, d: "D", r: 10, c: 5, a: "SWEETS",   clue: "Treats shared between neighbours and friends on a holiday." },
+  { n: 13, d: "D", r: 12, c: 2, a: "GIFTS",    clue: "Presents exchanged with family and friends." },
+];
+
+// Shaded squares in order -> S P A R K
+const SPARK: [number, number][] = [
+  [8, 3], // S
+  [0, 8], // P
+  [2, 3], // A
+  [2, 5], // R
+  [4, 3], // K
+];
+
+const SAVE_KEY = "cogitx-diwali-xw-v1";
+const key = (r: number, c: number) => r + "," + c;
+
+interface CellDef {
+  id: string;
+  r: number;
+  c: number;
+  ans: string;
+  num: number;
+  spark: number;
+  A: number | null;
+  D: number | null;
+}
+
+const CELLS = new Map<string, CellDef>();
+WORDS.forEach((w, i) => {
+  w.i = i;
+  w.cells = [];
+  for (let k = 0; k < w.a.length; k++) {
+    const r = w.r + (w.d === "D" ? k : 0);
+    const c = w.c + (w.d === "A" ? k : 0);
+    const id = key(r, c);
+    let cell = CELLS.get(id);
+    if (!cell) {
+      cell = { id, r, c, ans: w.a[k], num: 0, spark: 0, A: null, D: null };
+      CELLS.set(id, cell);
+    }
+    cell[w.d] = i;
+    w.cells.push(id);
+    if (k === 0) cell.num = w.n;
+  }
+});
+SPARK.forEach(([r, c], i) => {
+  const cObj = CELLS.get(key(r, c));
+  if (cObj) cObj.spark = i + 1;
+});
+
+const ORDER = [...WORDS]
+  .sort((a, b) => (a.d === b.d ? a.n - b.n : a.d === "A" ? -1 : 1))
+  .map((w) => w.i!);
 
 const CELL_LIST = [...CELLS.values()];
 const KEY_ROWS = [
@@ -11,11 +89,11 @@ const KEY_ROWS = [
   ["check", "Z", "X", "C", "V", "B", "N", "M", "back"],
 ];
 
-/* ── helpers ────────────────────────────────────────────────────── */
+/* ── Helpers ────────────────────────────────────────────────────── */
 const wordDone = (w: WordDef, L: Record<string, string>) =>
-  w.cells.every((k) => L[k] === CELLS.get(k)?.ans);
+  w.cells ? w.cells.every((k) => L[k] === CELLS.get(k)?.ans) : false;
 const wordFilled = (w: WordDef, L: Record<string, string>) =>
-  w.cells.every((k) => L[k]);
+  w.cells ? w.cells.every((k) => Boolean(L[k])) : false;
 const allCorrect = (L: Record<string, string>) =>
   CELL_LIST.every((c) => L[c.id] === c.ans);
 
@@ -44,7 +122,7 @@ export default function DiwaliCardPage() {
   const saved = useRef<{ letters: Record<string, string>; solved: boolean } | null>(null);
   if (!saved.current) saved.current = loadSaved();
 
-  /* state */
+  /* State */
   const [letters, setLetters] = useState<Record<string, string>>(saved.current.letters);
   const [solved, setSolved] = useState<boolean>(saved.current.solved);
   const [wordIdx, setWordIdx] = useState<number | null>(0); // opens on 1 Across
@@ -60,7 +138,7 @@ export default function DiwaliCardPage() {
   const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: "", show: false });
   const [clearArmed, setClearArmed] = useState<boolean>(false);
 
-  // App API, audio and fireworks states
+  // App API, audio, fireworks and hints
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [hintsLeft, setHintsLeft] = useState<number>(3);
   const [loading, setLoading] = useState<boolean>(false);
@@ -77,7 +155,7 @@ export default function DiwaliCardPage() {
     aiMessage: string;
   } | null>(null);
 
-  /* refs */
+  /* Refs */
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -126,12 +204,13 @@ export default function DiwaliCardPage() {
     toastT.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 3600);
   }, []);
 
-  /* ── zoom (the whole poster moves; the card docks under the word) ── */
+  /* ── zoom (smooth camera swoop to target word with custom scale) ─ */
   const positionCaret = useCallback(() => {
     const z = zoomRef.current;
     const { wordIdx: wi, idx: i } = latest.current;
     if (!z || wi == null) return;
     const w = WORDS[wi];
+    if (!w.cells) return;
     const el = cellRefs.current[w.cells[i]];
     const card = cardRef.current;
     const grid = gridRef.current;
@@ -147,12 +226,13 @@ export default function DiwaliCardPage() {
     const { wordIdx: wi } = latest.current;
     if (wi == null) return;
     const w = WORDS[wi];
-    const grid = gridRef.current,
-      stage = stageRef.current,
-      scroller = scrollerRef.current;
-    const keys = keysRef.current,
-      card = cardRef.current,
-      probe = probeRef.current;
+    if (!w.cells || w.cells.length === 0) return;
+    const grid = gridRef.current;
+    const stage = stageRef.current;
+    const scroller = scrollerRef.current;
+    const keys = keysRef.current;
+    const card = cardRef.current;
+    const probe = probeRef.current;
     const first = cellRefs.current[w.cells[0]];
     const last = cellRefs.current[w.cells[w.cells.length - 1]];
     if (!grid || !stage || !scroller || !keys || !card || !probe || !first || !last) return;
@@ -162,19 +242,19 @@ export default function DiwaliCardPage() {
     const y0 = grid.offsetTop + first.offsetTop;
     const wordW = grid.offsetLeft + last.offsetLeft + u - x0;
     const wordH = grid.offsetTop + last.offsetTop + u - y0;
-    const vw = window.innerWidth,
-      vh = window.innerHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
     const sr = scroller.getBoundingClientRect();
     const base = {
       left: sr.left + stage.offsetLeft - scroller.scrollLeft,
       top: sr.top + stage.offsetTop - scroller.scrollTop,
     };
-    const keysH = keys.offsetHeight,
-      cardH = card.offsetHeight,
-      safeTop = probe.offsetHeight;
-    const topMin = safeTop + 14,
-      bottomMax = vh - keysH - 10,
-      gap = 12;
+    const keysH = keys.offsetHeight;
+    const cardH = card.offsetHeight;
+    const safeTop = probe.offsetHeight;
+    const topMin = safeTop + 14;
+    const bottomMax = vh - keysH - 10;
+    const gap = 12;
     const maxW = Math.min(vw, 560) - 44;
     const availH = bottomMax - topMin - gap - cardH;
     let s = Math.min(maxW / wordW, availH / wordH);
@@ -212,6 +292,7 @@ export default function DiwaliCardPage() {
 
   const focusWord = useCallback((wi: number, i?: number) => {
     const w = WORDS[wi];
+    if (!w.cells) return;
     if (i == null) {
       i = w.cells.findIndex((k) => !latest.current.letters[k]);
       if (i < 0) i = 0;
@@ -226,8 +307,8 @@ export default function DiwaliCardPage() {
     (dir: number, skipFilled?: boolean) => {
       const { wordIdx: wi, letters: L } = latest.current;
       if (wi == null) return;
-      const pos = ORDER.indexOf(wi),
-        n = ORDER.length;
+      const pos = ORDER.indexOf(wi);
+      const n = ORDER.length;
       let pick: number | null = null;
       if (skipFilled) {
         for (let step = 1; step < n; step++) {
@@ -264,6 +345,7 @@ export default function DiwaliCardPage() {
     const { wordIdx: wi, idx: i } = latest.current;
     if (wi == null) return;
     const w = WORDS[wi];
+    if (!w.cells) return;
     const next = putLetter(w.cells[i], ch);
     if (i < w.cells.length - 1) {
       setIdx(i + 1);
@@ -281,6 +363,7 @@ export default function DiwaliCardPage() {
     const { wordIdx: wi, idx: i, letters: L } = latest.current;
     if (wi == null) return;
     const w = WORDS[wi];
+    if (!w.cells) return;
     if (L[w.cells[i]]) putLetter(w.cells[i], "");
     else if (i > 0) {
       setIdx(i - 1);
@@ -292,8 +375,9 @@ export default function DiwaliCardPage() {
     const { wordIdx: wi, letters: L } = latest.current;
     if (wi == null) return;
     const w = WORDS[wi];
-    let bad = 0,
-      empty = 0;
+    if (!w.cells) return;
+    let bad = 0;
+    let empty = 0;
     const marks = new Set(wrong);
     w.cells.forEach((k) => {
       if (!L[k]) empty++;
@@ -321,34 +405,34 @@ export default function DiwaliCardPage() {
       const t = setTimeout(() => {
         exitFocus();
         setWinTick((n) => n + 1);
+        showToast("Solved. The shaded squares spell SPARK — Happy Diwali!");
         setResultModal({
           wordsCorrect: WORDS.length,
           wordsTotal: WORDS.length,
           allCorrect: true,
           trophy: true,
-          aiMessage: "Happy Diwali! You cracked the whole puzzle. Shaded squares spell SPARK!",
+          aiMessage: "Nailed it with a perfect score! The shaded squares spell SPARK. Happy Diwali from CogitX!",
         });
       }, 320);
       return () => clearTimeout(t);
     }
     if (!all && solved) setSolved(false);
-  }, [letters, solved, exitFocus]);
+  }, [letters, solved, exitFocus, showToast]);
 
-  /* ── cell and key events ────────────────────────────────────── */
+  /* ── events ─────────────────────────────────────────────────── */
   const onCellClick = (id: string) => {
     const cell = CELLS.get(id);
     if (!cell) return;
     const { wordIdx: wi, idx: curIdx, focused: isFocused } = latest.current;
     const w = wi == null ? null : WORDS[wi];
     const has = { A: cell.A != null, D: cell.D != null };
-
-    if (w && w.cells.includes(id)) {
+    if (w && w.cells && w.cells.includes(id)) {
       const i = w.cells.indexOf(id);
       if (i === curIdx && isFocused) {
         // tapping the active square flips direction
         const other = w.d === "A" ? cell.D : cell.A;
-        if (other != null) {
-          focusWord(other, WORDS[other].cells.indexOf(id));
+        if (other != null && WORDS[other].cells) {
+          focusWord(other, WORDS[other].cells!.indexOf(id));
           return;
         }
       }
@@ -362,20 +446,20 @@ export default function DiwaliCardPage() {
     const dir = w ? w.d : "A";
     const target =
       dir === "A" && has.A
-        ? cell.A
+        ? cell.A!
         : dir === "D" && has.D
-        ? cell.D
+        ? cell.D!
         : has.A
-        ? cell.A
-        : cell.D;
-    if (target != null) {
-      focusWord(target, WORDS[target].cells.indexOf(id));
+        ? cell.A!
+        : cell.D!;
+    if (WORDS[target]?.cells) {
+      focusWord(target, WORDS[target].cells!.indexOf(id));
     }
   };
 
   const onKeyPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
-    const b = target.closest(".key") as HTMLElement | null;
+    const b = target.closest(".key") as HTMLButtonElement | null;
     if (!b) return;
     e.preventDefault();
     const k = b.dataset.key;
@@ -390,7 +474,8 @@ export default function DiwaliCardPage() {
   const onClear = () => {
     if (!clearArmed) {
       setClearArmed(true);
-      clearT.current = setTimeout(() => setClearArmed(false), 3000) as any;
+      clearTimeout(clearT.current as any);
+      clearT.current = setTimeout(() => setClearArmed(false), 3000);
       return;
     }
     clearTimeout(clearT.current as any);
@@ -400,8 +485,7 @@ export default function DiwaliCardPage() {
     setWrong(new Set());
     setWinTick(0);
     setSolved(false);
-    setWordIdx(null);
-    setHintsLeft(3);
+    setWordIdx(0);
     showToast("Puzzle cleared");
   };
 
@@ -418,11 +502,12 @@ export default function DiwaliCardPage() {
 
   // hardware keyboard
   useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => {
       const { focused: f, wordIdx: wi, idx: i } = latest.current;
       if (!f || wi == null) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const w = WORDS[wi];
+      if (!w.cells) return;
       if (/^[a-z]$/i.test(e.key)) {
         typeLetter(e.key.toUpperCase());
         e.preventDefault();
@@ -463,61 +548,84 @@ export default function DiwaliCardPage() {
     };
   }, [layoutZoom]);
 
-  /* ── API Backend Submission ─────────────────────────────────── */
+  /* ── Backend API Integration (Submit & Check Workflow) ─────── */
   const submitCrossword = async () => {
     setLoading(true);
     let correctCount = 0;
-    const marks = new Set<string>();
+    const localWrongMarks = new Set<string>();
 
     WORDS.forEach((w) => {
+      if (!w.cells) return;
       const wordText = w.cells.map((k) => letters[k] || "").join("");
       if (wordText.toUpperCase() === w.a) {
         correctCount++;
       } else {
         w.cells.forEach((k) => {
           if (letters[k] && letters[k] !== CELLS.get(k)?.ans) {
-            marks.add(k);
+            localWrongMarks.add(k);
           }
         });
       }
     });
-
-    setWrong(marks);
 
     try {
       const res = await fetch("/api/crossword", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "validate",
-          letters,
-          wordsSolved: correctCount,
-          totalWords: WORDS.length,
+          action: "submit",
+          playerName: "Player",
+          grid: letters,
         }),
       });
 
       const data = await res.json();
+      const isComplete = data?.allCorrect || data?.trophy || correctCount === WORDS.length;
+
+      // Update cell error marks from API if available
+      if (data?.cellStatus) {
+        const apiWrongMarks = new Set<string>();
+        for (const [k, status] of Object.entries(data.cellStatus)) {
+          if (status === "wrong") apiWrongMarks.add(k);
+        }
+        setWrong(apiWrongMarks);
+      } else {
+        setWrong(localWrongMarks);
+      }
+
+      if (isComplete) {
+        exitFocus();
+        setWinTick((n) => n + 1);
+        setSolved(true);
+      }
+
       setResultModal({
-        wordsCorrect: data.wordsCorrect ?? correctCount,
-        wordsTotal: data.wordsTotal ?? WORDS.length,
-        allCorrect: data.allCorrect ?? correctCount === WORDS.length,
-        trophy: data.trophy ?? correctCount === WORDS.length,
+        wordsCorrect: data?.wordsCorrect ?? correctCount,
+        wordsTotal: data?.wordsTotal ?? WORDS.length,
+        allCorrect: Boolean(isComplete),
+        trophy: Boolean(data?.trophy || isComplete),
         aiMessage:
-          data.message ||
-          (correctCount === WORDS.length
-            ? "Congratulations! You've nailed it with a perfect score. You've got a real talent for this!"
-            : `Great effort! You've correctly solved ${correctCount} of ${WORDS.length} words.`),
+          data?.aiMessage ||
+          (isComplete
+            ? "Nailed it with a perfect score! The shaded squares spell SPARK. Wishing you and your loved ones a very Happy Diwali!"
+            : `Great effort! You've correctly solved ${data?.wordsCorrect ?? correctCount} of ${WORDS.length} words.`),
       });
     } catch {
+      const isComplete = correctCount === WORDS.length;
+      setWrong(localWrongMarks);
+      if (isComplete) {
+        exitFocus();
+        setWinTick((n) => n + 1);
+        setSolved(true);
+      }
       setResultModal({
         wordsCorrect: correctCount,
         wordsTotal: WORDS.length,
-        allCorrect: correctCount === WORDS.length,
-        trophy: correctCount === WORDS.length,
-        aiMessage:
-          correctCount === WORDS.length
-            ? "Congratulations! You've nailed it with a perfect score. You've got a real talent for this!"
-            : `Great effort! You've correctly solved ${correctCount} of ${WORDS.length} words.`,
+        allCorrect: isComplete,
+        trophy: isComplete,
+        aiMessage: isComplete
+          ? "Nailed it with a perfect score! The shaded squares spell SPARK. Wishing you a very Happy Diwali!"
+          : `Great effort! You've correctly solved ${correctCount} of ${WORDS.length} words. Keep going!`,
       });
     } finally {
       setLoading(false);
@@ -532,6 +640,7 @@ export default function DiwaliCardPage() {
     }
 
     const currentWord = word || WORDS[0];
+    if (!currentWord.cells) return;
     setLoading(true);
 
     try {
@@ -540,22 +649,15 @@ export default function DiwaliCardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "hint",
-          clue: {
-            id: `${currentWord.n}${currentWord.d}`,
-            number: currentWord.n,
-            direction: currentWord.d === "A" ? "across" : "down",
-            label: `${currentWord.n} ${currentWord.d === "A" ? "Across" : "Down"}`,
-            clue: currentWord.clue,
-            solutionLength: currentWord.a.length,
-          },
-          hintsRemaining: hintsLeft - 1,
+          playerName: "Player",
+          clueId: `${currentWord.n}${currentWord.d}`,
         }),
       });
 
       const data = await res.json();
       setHintsLeft((prev) => Math.max(0, prev - 1));
 
-      // Reveal first unrevealed letter of the active word
+      // Reveal first unrevealed or incorrect letter of the active word
       const emptyIdx = currentWord.cells.findIndex((k) => (letters[k] || "") !== CELLS.get(k)?.ans);
       if (emptyIdx !== -1) {
         const targetKey = currentWord.cells[emptyIdx];
@@ -567,7 +669,7 @@ export default function DiwaliCardPage() {
         title: `Hint for ${currentWord.n} ${currentWord.d === "A" ? "Across" : "Down"}`,
         clueText: currentWord.clue,
         message:
-          data.hint ||
+          data?.aiMessage ||
           `This word starts with '${currentWord.a[0]}' and has ${currentWord.a.length} letters.`,
       });
 
@@ -583,7 +685,7 @@ export default function DiwaliCardPage() {
       setHintToast({
         title: `Hint for ${currentWord.n} ${currentWord.d === "A" ? "Across" : "Down"}`,
         clueText: currentWord.clue,
-        message: `This word has ${currentWord.a.length} letters and begins with '${currentWord.a[0]}'.`,
+        message: `This word begins with '${currentWord.a[0]}' and has ${currentWord.a.length} letters.`,
       });
       setTimeout(() => setHintToast(null), 6000);
     } finally {
@@ -595,12 +697,12 @@ export default function DiwaliCardPage() {
     if (typeof window !== "undefined") window.print();
   };
 
-  /* ── derived view data ──────────────────────────────────────── */
-  const activeCells = word ? word.cells : [];
+  /* Derived view data */
+  const activeCells = word && word.cells ? word.cells : [];
 
   return (
     <>
-      {/* Diwali Fireworks & Authentic Crackers Sound */}
+      {/* Diwali Fireworks & Authentic Sound on Completion */}
       <FireworksOverlay active={Boolean(resultModal)} soundEnabled={soundEnabled} />
 
       {/* Clue Hint Toast Notification */}
@@ -718,11 +820,11 @@ export default function DiwaliCardPage() {
                           key={w.i}
                           tabIndex={0}
                           className={(wordDone(w, letters) ? "done " : "") + (wordIdx === w.i ? "now" : "")}
-                          onClick={() => focusWord(w.i)}
+                          onClick={() => focusWord(w.i!)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              focusWord(w.i);
+                              focusWord(w.i!);
                             }
                           }}
                         >
@@ -760,7 +862,7 @@ export default function DiwaliCardPage() {
                   onClick={submitCrossword}
                   disabled={loading}
                 >
-                  {loading ? "Checking..." : "Submit & Check"}
+                  {loading ? "Checking with AI..." : "Submit & Check"}
                 </button>
 
                 <button
@@ -783,7 +885,7 @@ export default function DiwaliCardPage() {
                   type="button"
                   className="action-btn"
                   onClick={() => setSoundEnabled(!soundEnabled)}
-                  title="Toggle Cracker Audio"
+                  title="Toggle Crackers Audio"
                 >
                   {soundEnabled ? "Sound: On" : "Sound: Off"}
                 </button>
@@ -799,7 +901,7 @@ export default function DiwaliCardPage() {
             </div>
           </div>
 
-          {/* LAYER 2 · SCRIM (Fades non-active cells & background when focused) */}
+          {/* LAYER 2 · SCRIM (Dims background & non-active cells when zoomed) */}
           <div id="scrim" onClick={exitFocus} />
 
           {/* LAYER 3 · GRID CELLS */}
@@ -851,17 +953,29 @@ export default function DiwaliCardPage() {
       >
         <div className="caret" style={{ left: caretLeft + "px" }} />
         <div className="card-top">
-          <button className="nav" type="button" aria-label="Previous word" onClick={() => nextWord(-1)}>
+          <button
+            className="nav"
+            id="prev"
+            type="button"
+            aria-label="Previous word"
+            onClick={() => nextWord(-1)}
+          >
             ‹
           </button>
           <div className="eyebrow">
             <b>{word ? `${word.n} ${word.d === "A" ? "Across" : "Down"}` : ""}</b>
             <span>{word ? `${word.a.length} letters` : ""}</span>
           </div>
-          <button className="nav" type="button" aria-label="Next word" onClick={() => nextWord(1)}>
+          <button
+            className="nav"
+            id="next"
+            type="button"
+            aria-label="Next word"
+            onClick={() => nextWord(1)}
+          >
             ›
           </button>
-          <button className="done" type="button" onClick={exitFocus}>
+          <button className="done" id="done" type="button" onClick={exitFocus}>
             Done
           </button>
         </div>
@@ -875,7 +989,7 @@ export default function DiwaliCardPage() {
         <p className={"state" + (cardState.bad ? " bad" : "")}>{cardState.text}</p>
       </div>
 
-      {/* LAYER 5 · KEYBOARD (Smoothly slides up in focus mode) */}
+      {/* LAYER 5 · KEYBOARD (Slides up smoothly from bottom in focus mode) */}
       <div
         id="keys"
         ref={keysRef}
@@ -892,7 +1006,11 @@ export default function DiwaliCardPage() {
                 key={k}
                 type="button"
                 data-key={k}
-                className={"key" + (k.length > 1 ? " wide" : "") + (pressed === k ? " press" : "")}
+                className={
+                  "key" +
+                  (k.length > 1 ? " wide" : "") +
+                  (pressed === k ? " press" : "")
+                }
                 aria-label={k === "back" ? "Backspace" : k === "check" ? "Check word" : k}
               >
                 {k === "back" ? "⌫" : k === "check" ? "Check" : k}

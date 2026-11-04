@@ -83,11 +83,6 @@ const ORDER = [...WORDS]
   .map((w) => w.i!);
 
 const CELL_LIST = [...CELLS.values()];
-const KEY_ROWS = [
-  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
-  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
-  ["check", "Z", "X", "C", "V", "B", "N", "M", "back"],
-];
 
 /* ── Helpers ────────────────────────────────────────────────────── */
 const wordDone = (w: WordDef, L: Record<string, string>) =>
@@ -134,7 +129,6 @@ export default function DiwaliCardPage() {
   const [stageTransform, setStageTransform] = useState<string>("");
   const [cardTop, setCardTop] = useState<string | null>(null);
   const [caretLeft, setCaretLeft] = useState<number>(40);
-  const [pressed, setPressed] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: "", show: false });
   const [clearArmed, setClearArmed] = useState<boolean>(false);
 
@@ -160,7 +154,6 @@ export default function DiwaliCardPage() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const keysRef = useRef<HTMLDivElement | null>(null);
   const probeRef = useRef<HTMLDivElement | null>(null);
   const cellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const zoomRef = useRef<{ base: { left: number; top: number }; tx: number; ty: number; s: number } | null>(null);
@@ -230,12 +223,11 @@ export default function DiwaliCardPage() {
     const grid = gridRef.current;
     const stage = stageRef.current;
     const scroller = scrollerRef.current;
-    const keys = keysRef.current;
     const card = cardRef.current;
     const probe = probeRef.current;
     const first = cellRefs.current[w.cells[0]];
     const last = cellRefs.current[w.cells[w.cells.length - 1]];
-    if (!grid || !stage || !scroller || !keys || !card || !probe || !first || !last) return;
+    if (!grid || !stage || !scroller || !card || !probe || !first || !last) return;
 
     const u = first.offsetWidth;
     const x0 = grid.offsetLeft + first.offsetLeft;
@@ -249,11 +241,10 @@ export default function DiwaliCardPage() {
       left: sr.left + stage.offsetLeft - scroller.scrollLeft,
       top: sr.top + stage.offsetTop - scroller.scrollTop,
     };
-    const keysH = keys.offsetHeight;
     const cardH = card.offsetHeight;
     const safeTop = probe.offsetHeight;
     const topMin = safeTop + 14;
-    const bottomMax = vh - keysH - 10;
+    const bottomMax = vh - 24;
     const gap = 12;
     const maxW = Math.min(vw, 560) - 44;
     const availH = bottomMax - topMin - gap - cardH;
@@ -455,20 +446,6 @@ export default function DiwaliCardPage() {
     if (WORDS[target]?.cells) {
       focusWord(target, WORDS[target].cells!.indexOf(id));
     }
-  };
-
-  const onKeyPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    const b = target.closest(".key") as HTMLButtonElement | null;
-    if (!b) return;
-    e.preventDefault();
-    const k = b.dataset.key;
-    if (!k) return;
-    setPressed(k);
-    setTimeout(() => setPressed((p) => (p === k ? null : p)), 120);
-    if (k === "back") backspace();
-    else if (k === "check") checkWord();
-    else typeLetter(k);
   };
 
   const onClear = () => {
@@ -987,38 +964,6 @@ export default function DiwaliCardPage() {
           ) : null}
         </p>
         <p className={"state" + (cardState.bad ? " bad" : "")}>{cardState.text}</p>
-      </div>
-
-      {/* LAYER 5 · KEYBOARD (Slides up smoothly from bottom in focus mode) */}
-      <div
-        id="keys"
-        ref={keysRef}
-        className={"keys" + (focused ? " show" : "")}
-        aria-label="Keyboard"
-        onPointerDown={onKeyPointerDown}
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        {KEY_ROWS.map((row, ri) => (
-          <div className="krow" key={ri}>
-            {ri === 1 && <span className="sp" />}
-            {row.map((k) => (
-              <button
-                key={k}
-                type="button"
-                data-key={k}
-                className={
-                  "key" +
-                  (k.length > 1 ? " wide" : "") +
-                  (pressed === k ? " press" : "")
-                }
-                aria-label={k === "back" ? "Backspace" : k === "check" ? "Check word" : k}
-              >
-                {k === "back" ? "⌫" : k === "check" ? "Check" : k}
-              </button>
-            ))}
-            {ri === 1 && <span className="sp" />}
-          </div>
-        ))}
       </div>
 
       <div id="toast" role="status" className={toast.show ? "show" : ""}>

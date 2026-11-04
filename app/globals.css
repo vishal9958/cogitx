@@ -211,145 +211,61 @@ body {
   background: rgba(245, 158, 11, 0.45) !important;
 }
 
-/* Zoom Mode Cell Focus & Elevate Styles */
-.card-frame.is-zoomed .cell-slot:not(.word-active) {
-  opacity: 0.36;
-  filter: grayscale(80%);
+/* Selected word & focused cell styles */
+.cell-slot.word-active input {
+  background: rgba(254, 240, 138, 0.45) !important;
 }
 
-.card-frame.is-zoomed .cell-slot.word-active {
-  z-index: 25 !important;
-}
-
-.card-frame.is-zoomed .cell-slot.word-active input {
-  background: #fef9c3 !important;
-  mix-blend-mode: multiply;
-}
-
-.card-frame.is-zoomed .cell-slot.is-focused input {
-  box-shadow: inset 0 0 0 2.5px #2563eb !important;
+.cell-slot.is-focused input {
+  box-shadow: inset 0 0 0 2px #2563eb !important;
   border-radius: 2px;
+  background: rgba(254, 240, 138, 0.65) !important;
 }
 
-/* Floating Clue Tooltip Card (Attached underneath zoomed word) */
-.clue-floating-popover {
+/* 5 Shaded Mystery Squares Row (SPARK) */
+.mystery-squares-row {
   position: absolute;
-  width: 310px;
-  max-width: 92%;
-  background: #ffffff;
-  border-radius: 14px;
-  padding: 10px 14px 12px;
-  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.16);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  z-index: 40;
-  pointer-events: auto;
-  user-select: text;
-  text-align: left;
-  line-height: 1.35;
-  animation: popoverFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes popoverFadeIn {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -6px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0) scale(1);
-  }
-}
-
-/* Upward Caret pointing to active cell */
-.popover-caret {
-  position: absolute;
-  top: -7px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-bottom: 7px solid #ffffff;
-}
-
-.popover-header {
+  top: 59.2%;
+  left: 68.4%;
+  width: 27%;
+  height: 25px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 4px;
+  pointer-events: none;
+  z-index: 10;
 }
 
-.popover-nav-btn {
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  color: #475569;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  padding: 0;
-  flex-shrink: 0;
-}
-
-.popover-nav-btn:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-}
-
-.popover-title-group {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+.mystery-square-box {
   flex: 1;
+  max-width: 25px;
+  height: 25px;
+  background: #c4b5fd;
+  border: 1px solid #7c3aed;
+  border-radius: 2px;
+  position: relative;
+  display: flex;
+  align-items: center;
   justify-content: center;
+  box-shadow: inset 0 0 3px rgba(124, 58, 237, 0.25);
 }
 
-.popover-clue-label {
-  font-size: 11.5px;
-  font-weight: 800;
-  color: #0f172a;
+.mystery-square-letter {
+  font-size: 13.5px;
+  font-weight: 900;
+  color: #3b0764;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  line-height: 1;
 }
 
-.popover-clue-letters {
-  font-size: 10.5px;
-  font-weight: 500;
-  color: #64748b;
-}
-
-.popover-done-btn {
-  background: #0f172a;
-  color: #ffffff;
-  border: none;
-  border-radius: 9999px;
-  padding: 3px 12px;
-  font-size: 11px;
+.mystery-square-num {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 8px;
   font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s ease;
-  flex-shrink: 0;
-}
-
-.popover-done-btn:hover {
-  background: #1e293b;
-}
-
-.popover-clue-body {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: #1e293b;
-  margin: 0;
-  line-height: 1.4;
+  color: #6d28d9;
+  line-height: 1;
 }
 
 /* Interactive Bottom Clues Overlay */
@@ -436,6 +352,39 @@ body {
   font-weight: 500;
   color: #334155;
   word-break: break-word;
+}
+
+/* Card Footer Subtitle (Progress saves on this device) */
+.card-footer-note {
+  background: #f4f4ef;
+  text-align: center;
+  font-size: 11.5px;
+  color: #52525b;
+  padding: 8px 12px 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+}
+
+.footer-clear-btn {
+  background: transparent;
+  border: none;
+  color: #3f3f46;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+  padding: 0;
+}
+
+.footer-clear-btn:hover {
+  color: #09090b;
+}
+
+.footer-dot {
+  color: #a1a1aa;
 }
 
 @keyframes hintGlow {

@@ -243,23 +243,13 @@ const CROSSWORD_CELLS: CellDef[] = [
   { r: 15, c: 10, solution: "L" },
 ];
 
-// Custom per-box zoom scale so every word has its ideal magnification
-const CLUE_ZOOM_LEVELS: Record<string, number> = {
-  "1A": 2.45,
-  "3D": 2.38,
-  "5A": 2.45,
-  "8A": 2.45,
-  "2D": 2.2,
-  "13D": 2.2,
-  "7A": 2.12,
-  "9D": 2.08,
-  "11D": 2.08,
-  "12A": 2.08,
-  "14A": 2.12,
-  "4D": 1.78,
-  "6D": 1.88,
-  "10A": 1.82,
-};
+const MYSTERY_SHADED_KEYS = [
+  { key: "8-9", num: 1 },  // S
+  { key: "0-14", num: 2 }, // P
+  { key: "2-9", num: 3 },  // A
+  { key: "2-11", num: 4 }, // R
+  { key: "4-9", num: 5 },  // K
+];
 
 export default function DiwaliCardPage() {
   const [letters, setLetters] = useState<Record<string, string>>({});
@@ -269,11 +259,9 @@ export default function DiwaliCardPage() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [hintsLeft, setHintsLeft] = useState(3);
 
-  // Active cell, zoom, camera swoop, and word tracking
+  // Active cell and word tracking
   const [focusedCell, setFocusedCell] = useState<string | null>(null);
   const [activeClue, setActiveClue] = useState<ClueDef | null>(null);
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [isSwooping, setIsSwooping] = useState(false);
   const [hintedCell, setHintedCell] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -319,20 +307,10 @@ export default function DiwaliCardPage() {
   const downClues = CLUES_DATA.filter((c) => c.direction === "down");
 
   // Select a clue, smoothly swoop/zoom, and focus target cell
-  const handleSelectAndZoomClue = (clue: ClueDef) => {
-    if (isZoomed && activeClue && activeClue.id !== clue.id) {
-      // Camera swoop: slightly dip zoom out mid-flight while panning, then zoom back in
-      setIsSwooping(true);
-      setActiveClue(clue);
-      setTimeout(() => {
-        setIsSwooping(false);
-      }, 170);
-    } else {
-      setActiveClue(clue);
-      setIsZoomed(true);
-    }
+  // Select a clue from bottom list
+  const handleSelectClue = (clue: ClueDef) => {
+    setActiveClue(clue);
 
-    // Pick first empty/unsolved cell, or fallback to first cell
     const targetCell =
       clue.cells.find((k, idx) => (letters[k] || "").toUpperCase() !== clue.solution[idx]) ||
       clue.cells[0];
@@ -341,103 +319,11 @@ export default function DiwaliCardPage() {
       setFocusedCell(targetCell);
       setTimeout(() => {
         inputRefs.current[targetCell]?.focus();
-      }, 60);
+      }, 50);
     }
   };
 
-  // Exit zoomed view smoothly
-  const handleDoneZoom = (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setIsZoomed(false);
-    setIsSwooping(false);
-  };
-
-  // Cycle to previous clue in popover
-  const handlePrevClue = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!activeClue) return;
-    const currIdx = CLUES_DATA.findIndex((c) => c.id === activeClue.id);
-    const prevIdx = (currIdx - 1 + CLUES_DATA.length) % CLUES_DATA.length;
-    handleSelectAndZoomClue(CLUES_DATA[prevIdx]);
-  };
-
-  // Cycle to next clue in popover
-  const handleNextClue = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!activeClue) return;
-    const currIdx = CLUES_DATA.findIndex((c) => c.id === activeClue.id);
-    const nextIdx = (currIdx + 1) % CLUES_DATA.length;
-    handleSelectAndZoomClue(CLUES_DATA[nextIdx]);
-  };
-
-  // Calculate zoom transform with custom magnification per clue and camera swoop
-  const getZoomTransform = (clue: ClueDef | null) => {
-    if (!clue || !isZoomed) {
-      return { x: 0, y: 0, scale: 1 };
-    }
-
-    // Custom tailored zoom level for this specific clue
-    let targetScale = CLUE_ZOOM_LEVELS[clue.id] || 2.15;
-    if (typeof window !== "undefined" && window.innerWidth < 640) {
-      targetScale *= 0.85;
-    }
-
-    // Dip scale down during camera swoop when shifting between boxes
-    const S = isSwooping ? targetScale * 0.74 : targetScale;
-
-    let minR = 999, maxR = -1, minC = 999, maxC = -1;
-    clue.cells.forEach((k) => {
-      const [r, c] = k.split("-").map(Number);
-      if (r < minR) minR = r;
-      if (r > maxR) maxR = r;
-      if (c < minC) minC = c;
-      if (c > maxC) maxC = c;
-    });
-
-    const wordCenterXPct = ((43 + ((minC + maxC) / 2 + 0.5) * 32) / 730) * 100;
-    const wordCenterYPct = ((52 + ((minR + maxR) / 2 + 0.5) * 32) / 1024) * 100;
-
-    // Anchor word horizontally at 50% and vertically at ~31% of viewport
-    const tx = 50 - wordCenterXPct * S;
-    const ty = 31 - wordCenterYPct * S;
-
-    return { x: tx, y: ty, scale: S };
-  };
-
-  // Calculate popover position directly beneath the active word
-  const getPopoverPosition = (clue: ClueDef | null) => {
-    if (!clue) return { leftPct: 50, topPct: 50 };
-
-    let maxR = -1, minC = 999, maxC = -1;
-    clue.cells.forEach((k) => {
-      const [r, c] = k.split("-").map(Number);
-      if (r > maxR) maxR = r;
-      if (c < minC) minC = c;
-      if (c > maxC) maxC = c;
-    });
-
-    const wordCenterXPct = ((43 + ((minC + maxC) / 2 + 0.5) * 32) / 730) * 100;
-    const wordBottomPct = ((52 + (maxR + 1) * 32) / 1024) * 100;
-
-    return {
-      leftPct: wordCenterXPct,
-      topPct: wordBottomPct + 1.2, // ~12px directly below word
-    };
-  };
-
-  // Global key listener for Escape key to exit zoom smoothly
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape" && isZoomed) {
-        setIsZoomed(false);
-        setIsSwooping(false);
-      }
-    };
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [isZoomed]);
-
-  // When a cell is focused, pick the matching clue and zoom if not already
+  // When a cell is focused, pick the matching clue
   const handleCellFocus = (key: string) => {
     setFocusedCell(key);
     const matchingClues = cellToClues[key];
@@ -449,7 +335,7 @@ export default function DiwaliCardPage() {
     }
   };
 
-  // Cell click handler: smooth zoom/swoop to word
+  // Cell click handler
   const handleCellClick = (key: string) => {
     const matchingClues = cellToClues[key];
     if (matchingClues && matchingClues.length > 0) {
@@ -458,9 +344,7 @@ export default function DiwaliCardPage() {
           ? activeClue
           : matchingClues[0];
 
-      if (!isZoomed || activeClue?.id !== clue.id) {
-        handleSelectAndZoomClue(clue);
-      }
+      setActiveClue(clue);
       setFocusedCell(key);
       inputRefs.current[key]?.focus();
     }
@@ -693,7 +577,6 @@ export default function DiwaliCardPage() {
     setShowSolution(false);
     setFocusedCell(null);
     setActiveClue(null);
-    setIsZoomed(false);
     setHintsLeft(3);
   };
 
@@ -708,9 +591,6 @@ export default function DiwaliCardPage() {
     if (!activeClue) return false;
     return activeClue.cells.includes(key);
   };
-
-  const zoomTransform = getZoomTransform(activeClue);
-  const popoverPos = getPopoverPosition(activeClue);
 
   return (
     <div className="page-wrapper">
@@ -798,35 +678,14 @@ export default function DiwaliCardPage() {
         </div>
       )}
 
-      {/* Exact 1:1 Replica Card with Smooth Word Zoom */}
-      <main
-        ref={containerRef}
-        className={`card-frame ${isZoomed ? "is-zoomed" : ""}`}
-      >
-        <div
-          className="card-viewport"
-          style={{
-            transform: isZoomed
-              ? `translate(${zoomTransform.x}%, ${zoomTransform.y}%) scale(${zoomTransform.scale})`
-              : "translate(0%, 0%) scale(1)",
-            transformOrigin: "0 0",
-            transition: "transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)",
-          }}
-        >
+      {/* Exact 1:1 Replica Card */}
+      <main ref={containerRef} className="card-frame">
+        <div className="card-viewport">
           <img
             src="/diwali-card.jpg"
             alt="CogitX AI Diwali Crossword Greeting"
             className="card-image"
           />
-
-          {/* Dimmer Overlay in Zoom Mode (Clicking outside word dismisses zoom) */}
-          {isZoomed && (
-            <div
-              className="zoom-dim-overlay"
-              onClick={handleDoneZoom}
-              title="Click to zoom out"
-            />
-          )}
 
           {/* Interactive Crossword Input Overlay */}
           <section
@@ -891,56 +750,20 @@ export default function DiwaliCardPage() {
             })}
           </section>
 
-          {/* Floating Clue Popover Attached Directly Underneath Zoomed Word */}
-          {isZoomed && activeClue && (
-            <div
-              className="clue-floating-popover"
-              style={{
-                left: `${popoverPos.leftPct}%`,
-                top: `${popoverPos.topPct}%`,
-                transform: "translate(-50%, 0)",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="popover-caret" />
-              <div className="popover-header">
-                <button
-                  type="button"
-                  className="popover-nav-btn"
-                  onClick={handlePrevClue}
-                  title="Previous clue"
-                  aria-label="Previous clue"
-                >
-                  ‹
-                </button>
-                <div className="popover-title-group">
-                  <span className="popover-clue-label">
-                    {activeClue.number} {activeClue.direction.toUpperCase()}
-                  </span>
-                  <span className="popover-clue-letters">
-                    {activeClue.solution.length} letters
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="popover-nav-btn"
-                  onClick={handleNextClue}
-                  title="Next clue"
-                  aria-label="Next clue"
-                >
-                  ›
-                </button>
-                <button
-                  type="button"
-                  className="popover-done-btn"
-                  onClick={handleDoneZoom}
-                >
-                  Done
-                </button>
+          {/* 5 Shaded Mystery Squares Row (SPARK) */}
+          <div
+            className="mystery-squares-row"
+            aria-label="Mystery word shaded squares"
+          >
+            {MYSTERY_SHADED_KEYS.map((item) => (
+              <div key={item.key} className="mystery-square-box">
+                <span className="mystery-square-letter">
+                  {letters[item.key] || ""}
+                </span>
+                <span className="mystery-square-num">{item.num}</span>
               </div>
-              <p className="popover-clue-body">{activeClue.clue}</p>
-            </div>
-          )}
+            ))}
+          </div>
 
           {/* Interactive Bottom Clues List Overlay (Across & Down) */}
           <section
@@ -957,8 +780,8 @@ export default function DiwaliCardPage() {
                       key={clue.id}
                       type="button"
                       className={`clue-row-btn ${isActive ? "active" : ""}`}
-                      onClick={() => handleSelectAndZoomClue(clue)}
-                      title={`Select ${clue.label} and zoom in`}
+                      onClick={() => handleSelectClue(clue)}
+                      title={`Select ${clue.label}`}
                     >
                       <span className="clue-num-tag">{clue.number}</span>
                       <span className="clue-body-text">{clue.clue}</span>
@@ -978,8 +801,8 @@ export default function DiwaliCardPage() {
                       key={clue.id}
                       type="button"
                       className={`clue-row-btn ${isActive ? "active" : ""}`}
-                      onClick={() => handleSelectAndZoomClue(clue)}
-                      title={`Select ${clue.label} and zoom in`}
+                      onClick={() => handleSelectClue(clue)}
+                      title={`Select ${clue.label}`}
                     >
                       <span className="clue-num-tag">{clue.number}</span>
                       <span className="clue-body-text">{clue.clue}</span>
@@ -991,6 +814,19 @@ export default function DiwaliCardPage() {
           </section>
         </div>
 
+        {/* Card Footer Subtitle (Progress saves on this device) */}
+        <div className="card-footer-note">
+          <button
+            type="button"
+            className="footer-clear-btn"
+            onClick={clearAll}
+          >
+            Clear puzzle
+          </button>
+          <span className="footer-dot">·</span>
+          <span>Tap any square to play. Progress saves on this device.</span>
+        </div>
+
         {/* Card Form Action Buttons (Docked inside the card frame at the bottom) */}
         <footer className="card-form-actions" aria-label="Game Actions">
           <button
@@ -999,8 +835,7 @@ export default function DiwaliCardPage() {
             onClick={submitCrossword}
             disabled={loading}
           >
-            <span>⚡</span>
-            <span>{loading ? "Checking..." : "Submit & Check"}</span>
+            {loading ? "Checking..." : "Submit & Check"}
           </button>
 
           <button
@@ -1016,10 +851,7 @@ export default function DiwaliCardPage() {
                 : `Get a hint (${hintsLeft} left)`
             }
           >
-            <span>💡</span>
-            <span>
-              Hint {activeClue ? `(${activeClue.label})` : ""} [{hintsLeft}/3]
-            </span>
+            Hint {activeClue ? `(${activeClue.label})` : ""} [{hintsLeft}/3]
           </button>
 
           <button
@@ -1028,7 +860,7 @@ export default function DiwaliCardPage() {
             onClick={() => setSoundEnabled(!soundEnabled)}
             title="Toggle Cracker Audio"
           >
-            <span>{soundEnabled ? "🔊 Sound: On" : "🔇 Sound: Off"}</span>
+            {soundEnabled ? "Sound: On" : "Sound: Off"}
           </button>
 
           <button

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, KeyboardEvent } from "react";
+import React, { useState, useRef, KeyboardEvent, useEffect } from "react";
 import FireworksOverlay from "../components/FireworksOverlay";
 
 interface CellDef {
@@ -251,10 +251,13 @@ export default function DiwaliCardPage() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [hintsLeft, setHintsLeft] = useState(3);
 
-  // Active cell and word tracking
+  // Active cell, zoom, and word tracking
   const [focusedCell, setFocusedCell] = useState<string | null>(null);
   const [activeClue, setActiveClue] = useState<ClueDef | null>(null);
+  const [isZoomed, setIsZoomed] = useState(false);
   const [hintedCell, setHintedCell] = useState<string | null>(null);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const [hintToast, setHintToast] = useState<{
     title: string;
@@ -293,26 +296,134 @@ export default function DiwaliCardPage() {
     })()
   ).current;
 
-  // Select a clue and focus its first cell
-  const handleSelectClue = (clue: ClueDef) => {
+  const acrossClues = CLUES_DATA.filter((c) => c.direction === "across");
+  const downClues = CLUES_DATA.filter((c) => c.direction === "down");
+
+  // Select a clue, zoom in smoothly, and focus its first cell
+  const handleSelectAndZoomClue = (clue: ClueDef) => {
     setActiveClue(clue);
-    const firstCell = clue.cells[0];
-    if (firstCell && inputRefs.current[firstCell]) {
-      inputRefs.current[firstCell]?.focus();
+    setIsZoomed(true);
+
+    // Pick first empty/unsolved cell, or fallback to first cell
+    const targetCell =
+      clue.cells.find((k, idx) => (letters[k] || "").toUpperCase() !== clue.solution[idx]) ||
+      clue.cells[0];
+
+    if (targetCell) {
+      setFocusedCell(targetCell);
+      setTimeout(() => {
+        inputRefs.current[targetCell]?.focus();
+      }, 50);
     }
   };
 
-  // When a cell is focused, pick the matching clue
+  // Exit zoomed view smoothly
+  const handleDoneZoom = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setIsZoomed(false);
+  };
+
+  // Cycle to previous clue in popover
+  const handlePrevClue = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!activeClue) return;
+    const currIdx = CLUES_DATA.findIndex((c) => c.id === activeClue.id);
+    const prevIdx = (currIdx - 1 + CLUES_DATA.length) % CLUES_DATA.length;
+    handleSelectAndZoomClue(CLUES_DATA[prevIdx]);
+  };
+
+  // Cycle to next clue in popover
+  const handleNextClue = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!activeClue) return;
+    const currIdx = CLUES_DATA.findIndex((c) => c.id === activeClue.id);
+    const nextIdx = (currIdx + 1) % CLUES_DATA.length;
+    handleSelectAndZoomClue(CLUES_DATA[nextIdx]);
+  };
+
+  // Calculate zoom transform so active word is nicely centered in viewport
+  const getZoomTransform = (clue: ClueDef | null) => {
+    if (!clue || !isZoomed) {
+      return { x: 0, y: 0, scale: 1 };
+    }
+
+    const S = 2.15; // 2.15x zoom magnification
+
+    let minR = 999, maxR = -1, minC = 999, maxC = -1;
+    clue.cells.forEach((k) => {
+      const [r, c] = k.split("-").map(Number);
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    });
+
+    const wordCenterXPct = ((43 + ((minC + maxC) / 2 + 0.5) * 32) / 730) * 100;
+    const wordCenterYPct = ((52 + ((minR + maxR) / 2 + 0.5) * 32) / 1024) * 100;
+
+    // Anchor word horizontally at 50% and vertically at ~31% of viewport
+    const tx = 50 - wordCenterXPct * S;
+    const ty = 31 - wordCenterYPct * S;
+
+    return { x: tx, y: ty, scale: S };
+  };
+
+  // Calculate popover position directly beneath the active word
+  const getPopoverPosition = (clue: ClueDef | null) => {
+    if (!clue) return { leftPct: 50, topPct: 50 };
+
+    let maxR = -1, minC = 999, maxC = -1;
+    clue.cells.forEach((k) => {
+      const [r, c] = k.split("-").map(Number);
+      if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    });
+
+    const wordCenterXPct = ((43 + ((minC + maxC) / 2 + 0.5) * 32) / 730) * 100;
+    const wordBottomPct = ((52 + (maxR + 1) * 32) / 1024) * 100;
+
+    return {
+      leftPct: wordCenterXPct,
+      topPct: wordBottomPct + 1.2, // ~12px directly below word
+    };
+  };
+
+  // Global key listener for Escape key to exit zoom smoothly
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape" && isZoomed) {
+        setIsZoomed(false);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isZoomed]);
+
+  // When a cell is focused, pick the matching clue and zoom if not already
   const handleCellFocus = (key: string) => {
     setFocusedCell(key);
     const matchingClues = cellToClues[key];
     if (matchingClues && matchingClues.length > 0) {
-      // If currently active clue already covers this cell, keep it
       if (activeClue && matchingClues.some((c) => c.id === activeClue.id)) {
         return;
       }
-      // Otherwise set to the primary clue for this cell (e.g. 13D for Box 13 at 12-8)
       setActiveClue(matchingClues[0]);
+    }
+  };
+
+  // Cell click handler: smooth zoom to word if not zoomed
+  const handleCellClick = (key: string) => {
+    const matchingClues = cellToClues[key];
+    if (matchingClues && matchingClues.length > 0) {
+      const clue = (activeClue && matchingClues.some((c) => c.id === activeClue.id))
+        ? activeClue
+        : matchingClues[0];
+      setActiveClue(clue);
+      setFocusedCell(key);
+      if (!isZoomed) {
+        setIsZoomed(true);
+      }
     }
   };
 
@@ -327,6 +438,18 @@ export default function DiwaliCardPage() {
           return next;
         });
       }
+
+      // Automatically advance to the next cell in the active word
+      if (char && activeClue) {
+        const currIdx = activeClue.cells.indexOf(key);
+        if (currIdx !== -1 && currIdx + 1 < activeClue.cells.length) {
+          const nextKey = activeClue.cells[currIdx + 1];
+          setTimeout(() => {
+            setFocusedCell(nextKey);
+            inputRefs.current[nextKey]?.focus();
+          }, 10);
+        }
+      }
     }
   };
 
@@ -334,45 +457,45 @@ export default function DiwaliCardPage() {
     const [r, c] = key.split("-").map(Number);
 
     if (e.key === "Backspace") {
-      if (!letters[key]) {
-        const prevH = `${r}-${c - 1}`;
-        const prevV = `${r - 1}-${c}`;
-        const target = cellMap[prevH] ? prevH : cellMap[prevV] ? prevV : null;
-        if (target) {
-          inputRefs.current[target]?.focus();
+      if (!letters[key] && activeClue) {
+        const currIdx = activeClue.cells.indexOf(key);
+        if (currIdx > 0) {
+          e.preventDefault();
+          const prevKey = activeClue.cells[currIdx - 1];
+          setFocusedCell(prevKey);
+          inputRefs.current[prevKey]?.focus();
+          setLetters((prev) => ({ ...prev, [prevKey]: "" }));
+          return;
         }
       }
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
       const next = `${r}-${c + 1}`;
-      if (cellMap[next]) inputRefs.current[next]?.focus();
+      if (cellMap[next]) {
+        setFocusedCell(next);
+        inputRefs.current[next]?.focus();
+      }
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       const prev = `${r}-${c - 1}`;
-      if (cellMap[prev]) inputRefs.current[prev]?.focus();
+      if (cellMap[prev]) {
+        setFocusedCell(prev);
+        inputRefs.current[prev]?.focus();
+      }
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       const down = `${r + 1}-${c}`;
-      if (cellMap[down]) inputRefs.current[down]?.focus();
+      if (cellMap[down]) {
+        setFocusedCell(down);
+        inputRefs.current[down]?.focus();
+      }
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       const up = `${r - 1}-${c}`;
-      if (cellMap[up]) inputRefs.current[up]?.focus();
-    } else if (/^[a-zA-Z]$/.test(e.key)) {
-      setTimeout(() => {
-        // If active clue is down, move down; if across, move right
-        if (activeClue?.direction === "down") {
-          const down = `${r + 1}-${c}`;
-          if (cellMap[down]) {
-            inputRefs.current[down]?.focus();
-            return;
-          }
-        }
-        const nextH = `${r}-${c + 1}`;
-        const nextV = `${r + 1}-${c}`;
-        const target = cellMap[nextH] ? nextH : cellMap[nextV] ? nextV : null;
-        if (target) inputRefs.current[target]?.focus();
-      }, 10);
+      if (cellMap[up]) {
+        setFocusedCell(up);
+        inputRefs.current[up]?.focus();
+      }
     }
   };
 
@@ -531,6 +654,7 @@ export default function DiwaliCardPage() {
     setShowSolution(false);
     setFocusedCell(null);
     setActiveClue(null);
+    setIsZoomed(false);
     setHintsLeft(3);
   };
 
@@ -545,6 +669,9 @@ export default function DiwaliCardPage() {
     if (!activeClue) return false;
     return activeClue.cells.includes(key);
   };
+
+  const zoomTransform = getZoomTransform(activeClue);
+  const popoverPos = getPopoverPosition(activeClue);
 
   return (
     <div className="page-wrapper">
@@ -632,80 +759,206 @@ export default function DiwaliCardPage() {
         </div>
       )}
 
-      {/* Active Clue Bar (Shown above the card when any cell is clicked) */}
-      {activeClue && (
+      {/* Active Clue Bar (Shown above the card only when clue is selected and NOT zoomed) */}
+      {activeClue && !isZoomed && (
         <header className="active-clue-bar" aria-live="polite">
           <span className="clue-badge">{activeClue.label}</span>
           <span className="clue-text">{activeClue.clue}</span>
         </header>
       )}
 
-      {/* Exact 1:1 Replica Card */}
-      <main className="card-frame">
-        <img
-          src="/diwali-card.jpg"
-          alt="CogitX AI Diwali Crossword Greeting"
-          className="card-image"
-        />
-
-        {/* Interactive Crossword Input Overlay */}
-        <section
-          className="interactive-overlay"
-          aria-label="Crossword Grid Cells"
+      {/* Exact 1:1 Replica Card with Smooth Word Zoom */}
+      <main
+        ref={containerRef}
+        className={`card-frame ${isZoomed ? "is-zoomed" : ""}`}
+      >
+        <div
+          className="card-viewport"
+          style={{
+            transform: isZoomed
+              ? `translate(${zoomTransform.x}%, ${zoomTransform.y}%) scale(${zoomTransform.scale})`
+              : "translate(0%, 0%) scale(1)",
+            transformOrigin: "0 0",
+            transition: "transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
         >
-          {CROSSWORD_CELLS.map((cell) => {
-            const key = `${cell.r}-${cell.c}`;
-            const leftPct = ((43 + cell.c * 32) / 730) * 100;
-            const topPct = ((52 + cell.r * 32) / 1024) * 100;
-            const widthPct = (32 / 730) * 100;
-            const heightPct = (32 / 1024) * 100;
+          <img
+            src="/diwali-card.jpg"
+            alt="CogitX AI Diwali Crossword Greeting"
+            className="card-image"
+          />
 
-            const displayValue = showSolution
-              ? cell.solution
-              : letters[key] || "";
+          {/* Dimmer Overlay in Zoom Mode (Clicking outside word dismisses zoom) */}
+          {isZoomed && (
+            <div
+              className="zoom-dim-overlay"
+              onClick={handleDoneZoom}
+              title="Click to zoom out"
+            />
+          )}
 
-            const statusClass =
-              cellStatus[key] === "correct"
-                ? "correct"
-                : cellStatus[key] === "wrong"
-                ? "incorrect"
-                : "";
+          {/* Interactive Crossword Input Overlay */}
+          <section
+            className="interactive-overlay"
+            aria-label="Crossword Grid Cells"
+          >
+            {CROSSWORD_CELLS.map((cell) => {
+              const key = `${cell.r}-${cell.c}`;
+              const leftPct = ((43 + cell.c * 32) / 730) * 100;
+              const topPct = ((52 + cell.r * 32) / 1024) * 100;
+              const widthPct = (32 / 730) * 100;
+              const heightPct = (32 / 1024) * 100;
 
-            const isWordActive = isCellInActiveWord(key);
-            const isHinted = hintedCell === key;
+              const displayValue = showSolution
+                ? cell.solution
+                : letters[key] || "";
 
-            return (
-              <div
-                key={key}
-                className={`cell-slot ${statusClass} ${
-                  isWordActive ? "word-active" : ""
-                } ${isHinted ? "hint-pulse" : ""}`}
-                style={{
-                  left: `${leftPct}%`,
-                  top: `${topPct}%`,
-                  width: `${widthPct}%`,
-                  height: `${heightPct}%`,
-                }}
-              >
-                <input
-                  ref={(el) => {
-                    inputRefs.current[key] = el;
+              const statusClass =
+                cellStatus[key] === "correct"
+                  ? "correct"
+                  : cellStatus[key] === "wrong"
+                  ? "incorrect"
+                  : "";
+
+              const isWordActive = isCellInActiveWord(key);
+              const isHinted = hintedCell === key;
+              const isFocused = focusedCell === key;
+
+              return (
+                <div
+                  key={key}
+                  className={`cell-slot ${statusClass} ${
+                    isWordActive ? "word-active" : ""
+                  } ${isHinted ? "hint-pulse" : ""} ${
+                    isFocused ? "is-focused" : ""
+                  }`}
+                  style={{
+                    left: `${leftPct}%`,
+                    top: `${topPct}%`,
+                    width: `${widthPct}%`,
+                    height: `${heightPct}%`,
                   }}
-                  type="text"
-                  maxLength={1}
-                  value={displayValue}
-                  onFocus={() => handleCellFocus(key)}
-                  onChange={(e) => handleInput(key, e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(key, e)}
-                  aria-label={`Row ${cell.r + 1}, Column ${cell.c + 1}`}
-                  autoCapitalize="characters"
-                  autoComplete="off"
-                  spellCheck="false"
-                />
+                  onClick={() => handleCellClick(key)}
+                >
+                  <input
+                    ref={(el) => {
+                      inputRefs.current[key] = el;
+                    }}
+                    type="text"
+                    maxLength={1}
+                    value={displayValue}
+                    onFocus={() => handleCellFocus(key)}
+                    onChange={(e) => handleInput(key, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(key, e)}
+                    aria-label={`Row ${cell.r + 1}, Column ${cell.c + 1}`}
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
+                </div>
+              );
+            })}
+          </section>
+
+          {/* Floating Clue Popover Attached Directly Underneath Zoomed Word */}
+          {isZoomed && activeClue && (
+            <div
+              className="clue-floating-popover"
+              style={{
+                left: `${popoverPos.leftPct}%`,
+                top: `${popoverPos.topPct}%`,
+                transform: "translate(-50%, 0)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="popover-caret" />
+              <div className="popover-header">
+                <button
+                  type="button"
+                  className="popover-nav-btn"
+                  onClick={handlePrevClue}
+                  title="Previous clue"
+                  aria-label="Previous clue"
+                >
+                  ‹
+                </button>
+                <div className="popover-title-group">
+                  <span className="popover-clue-label">
+                    {activeClue.number} {activeClue.direction.toUpperCase()}
+                  </span>
+                  <span className="popover-clue-letters">
+                    {activeClue.solution.length} letters
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="popover-nav-btn"
+                  onClick={handleNextClue}
+                  title="Next clue"
+                  aria-label="Next clue"
+                >
+                  ›
+                </button>
+                <button
+                  type="button"
+                  className="popover-done-btn"
+                  onClick={handleDoneZoom}
+                >
+                  Done
+                </button>
               </div>
-            );
-          })}
-        </section>
+              <p className="popover-clue-body">{activeClue.clue}</p>
+            </div>
+          )}
+
+          {/* Interactive Bottom Clues List Overlay (Across & Down) */}
+          <section
+            className="clues-card-overlay"
+            aria-label="Interactive Crossword Clues"
+          >
+            <div className="clues-col across-col">
+              <h3 className="clues-heading">ACROSS</h3>
+              <div className="clues-list">
+                {acrossClues.map((clue) => {
+                  const isActive = activeClue?.id === clue.id;
+                  return (
+                    <button
+                      key={clue.id}
+                      type="button"
+                      className={`clue-row-btn ${isActive ? "active" : ""}`}
+                      onClick={() => handleSelectAndZoomClue(clue)}
+                      title={`Select ${clue.label} and zoom in`}
+                    >
+                      <span className="clue-num-tag">{clue.number}</span>
+                      <span className="clue-body-text">{clue.clue}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="clues-col down-col">
+              <h3 className="clues-heading">DOWN</h3>
+              <div className="clues-list">
+                {downClues.map((clue) => {
+                  const isActive = activeClue?.id === clue.id;
+                  return (
+                    <button
+                      key={clue.id}
+                      type="button"
+                      className={`clue-row-btn ${isActive ? "active" : ""}`}
+                      onClick={() => handleSelectAndZoomClue(clue)}
+                      title={`Select ${clue.label} and zoom in`}
+                    >
+                      <span className="clue-num-tag">{clue.number}</span>
+                      <span className="clue-body-text">{clue.clue}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        </div>
       </main>
 
       {/* Floating Toolbar with CogitX Actions */}

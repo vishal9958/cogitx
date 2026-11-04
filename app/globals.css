@@ -89,15 +89,24 @@ body {
   cursor: not-allowed;
 }
 
-/* The Exact 1:1 Replica Card */
+/* The Exact 1:1 Replica Card Container */
 .card-frame {
   position: relative;
   width: 100%;
   max-width: 730px;
-  background: #ffffff;
+  background: #eeeee9;
   box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.25);
-  line-height: 0;
+  border-radius: 12px;
+  overflow: hidden;
   user-select: none;
+}
+
+/* Card inner viewport for smooth zooming and panning */
+.card-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
 }
 
 /* Original crisp card image */
@@ -105,6 +114,16 @@ body {
   width: 100%;
   height: auto;
   display: block;
+}
+
+/* Dimmer Overlay in Zoom Mode */
+.zoom-dim-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.44);
+  z-index: 10;
+  cursor: zoom-out;
+  animation: fadeIn 0.3s ease;
 }
 
 /* Crossword interactive inputs overlay */
@@ -124,6 +143,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 5;
+  transition: opacity 0.3s ease, filter 0.3s ease;
 }
 
 .cell-slot input {
@@ -168,12 +189,239 @@ body {
 
 /* Selected word & hint highlight */
 .cell-slot.word-active:not(.correct):not(.incorrect) input {
-  background: rgba(254, 240, 138, 0.32);
+  background: rgba(254, 240, 138, 0.38);
 }
 
 .cell-slot.hint-pulse input {
   animation: hintGlow 1.8s ease-out;
   background: rgba(245, 158, 11, 0.45) !important;
+}
+
+/* Zoom Mode Cell Focus & Elevate Styles */
+.card-frame.is-zoomed .cell-slot:not(.word-active) {
+  opacity: 0.36;
+  filter: grayscale(80%);
+}
+
+.card-frame.is-zoomed .cell-slot.word-active {
+  z-index: 25 !important;
+}
+
+.card-frame.is-zoomed .cell-slot.word-active input {
+  background: #fef9c3 !important;
+  mix-blend-mode: multiply;
+}
+
+.card-frame.is-zoomed .cell-slot.is-focused input {
+  box-shadow: inset 0 0 0 2.5px #2563eb !important;
+  border-radius: 2px;
+}
+
+/* Floating Clue Tooltip Card (Attached underneath zoomed word) */
+.clue-floating-popover {
+  position: absolute;
+  width: 310px;
+  max-width: 92%;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 10px 14px 12px;
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  z-index: 40;
+  pointer-events: auto;
+  user-select: text;
+  text-align: left;
+  line-height: 1.35;
+  animation: popoverFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+/* Upward Caret pointing to active cell */
+.popover-caret {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 7px solid #ffffff;
+}
+
+.popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.popover-nav-btn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.popover-nav-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.popover-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
+}
+
+.popover-clue-label {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #0f172a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.popover-clue-letters {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.popover-done-btn {
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
+  border-radius: 9999px;
+  padding: 3px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.popover-done-btn:hover {
+  background: #1e293b;
+}
+
+.popover-clue-body {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #1e293b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Interactive Bottom Clues Overlay */
+.clues-card-overlay {
+  position: absolute;
+  top: 63.2%;
+  left: 36.8%;
+  width: 58.2%;
+  height: 27.8%;
+  display: flex;
+  gap: 12px;
+  background: #eeeee9;
+  padding: 4px 6px;
+  pointer-events: auto;
+  user-select: text;
+  box-sizing: border-box;
+  z-index: 5;
+  transition: opacity 0.3s ease;
+}
+
+.card-frame.is-zoomed .clues-card-overlay {
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+.clues-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.clues-heading {
+  font-size: clamp(8.5px, 1.3vw, 10.5px);
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: 0.05em;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  padding-left: 4px;
+}
+
+.clues-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5px;
+  flex: 1;
+}
+
+.clue-row-btn {
+  background: transparent;
+  border: none;
+  text-align: left;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  font-family: inherit;
+  line-height: 1.32;
+  color: #1e293b;
+}
+
+.clue-row-btn:hover:not(.active) {
+  background: rgba(254, 243, 199, 0.5);
+}
+
+.clue-row-btn.active {
+  background: #fef3c7 !important;
+}
+
+.clue-num-tag {
+  font-weight: 800;
+  font-size: clamp(7.5px, 1.2vw, 9.5px);
+  color: #0f172a;
+  min-width: 14px;
+  flex-shrink: 0;
+}
+
+.clue-body-text {
+  font-size: clamp(7.5px, 1.15vw, 9.2px);
+  font-weight: 500;
+  color: #334155;
+  word-break: break-word;
 }
 
 @keyframes hintGlow {
@@ -430,7 +678,9 @@ body {
 
   .floating-toolbar,
   .ai-toast,
-  .modal-backdrop {
+  .modal-backdrop,
+  .clue-floating-popover,
+  .zoom-dim-overlay {
     display: none !important;
   }
 
@@ -441,6 +691,21 @@ body {
   .card-frame {
     box-shadow: none;
     max-width: 100%;
+    overflow: visible;
+  }
+
+  .card-viewport {
+    transform: none !important;
+  }
+
+  .clues-card-overlay {
+    opacity: 1 !important;
+    pointer-events: none;
+  }
+
+  .cell-slot {
+    opacity: 1 !important;
+    filter: none !important;
   }
 
   .cell-slot input {

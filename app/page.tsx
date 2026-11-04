@@ -83,6 +83,11 @@ const ORDER = [...WORDS]
   .map((w) => w.i!);
 
 const CELL_LIST = [...CELLS.values()];
+const KEY_ROWS = [
+  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+  ["check", "Z", "X", "C", "V", "B", "N", "M", "back"],
+];
 
 /* ── Helpers ────────────────────────────────────────────────────── */
 const wordDone = (w: WordDef, L: Record<string, string>) =>
@@ -126,6 +131,8 @@ export default function DiwaliCardPage() {
   const [stageTransform, setStageTransform] = useState<string>("");
   const [cardTop, setCardTop] = useState<string | null>(null);
   const [caretLeft, setCaretLeft] = useState<number>(40);
+  const [pressed, setPressed] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
   const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: "", show: false });
   const [clearArmed, setClearArmed] = useState<boolean>(false);
 
@@ -151,6 +158,7 @@ export default function DiwaliCardPage() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const keysRef = useRef<HTMLDivElement | null>(null);
   const probeRef = useRef<HTMLDivElement | null>(null);
   const cellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const zoomRef = useRef<{ base: { left: number; top: number }; tx: number; ty: number; s: number } | null>(null);
@@ -178,6 +186,20 @@ export default function DiwaliCardPage() {
   /* ── unit ───────────────────────────────────────────────────── */
   useLayoutEffect(() => {
     setUnit();
+  }, []);
+
+  /* ── mobile detection for on-screen keyboard ───────────────── */
+  useEffect(() => {
+    const check = () => {
+      const isTouch =
+        typeof window !== "undefined" &&
+        ("ontouchstart" in window || (navigator && navigator.maxTouchPoints > 0));
+      const isNarrow = typeof window !== "undefined" && window.innerWidth <= 768;
+      setIsMobile(Boolean(isTouch || isNarrow));
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
 
   /* ── persistence ────────────────────────────────────────────── */
@@ -241,9 +263,14 @@ export default function DiwaliCardPage() {
       top: sr.top + stage.offsetTop - scroller.scrollTop,
     };
     const cardH = card.offsetHeight;
+    const keys = keysRef.current;
+    const isMobileDevice =
+      typeof window !== "undefined" &&
+      (window.innerWidth <= 768 || "ontouchstart" in window);
+    const keysH = isMobileDevice && keys ? keys.offsetHeight : 0;
     const safeTop = probe.offsetHeight;
     const topMin = safeTop + 14;
-    const bottomMax = vh - 24;
+    const bottomMax = vh - (keysH > 0 ? keysH + 10 : 24);
     const gap = 12;
     const maxW = Math.min(vw, 560) - 44;
     const availH = bottomMax - topMin - gap - cardH;
@@ -447,6 +474,20 @@ export default function DiwaliCardPage() {
     }
   };
 
+  const onKeyPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const b = target.closest(".key") as HTMLButtonElement | null;
+    if (!b) return;
+    e.preventDefault();
+    const k = b.dataset.key;
+    if (!k) return;
+    setPressed(k);
+    setTimeout(() => setPressed((p) => (p === k ? null : p)), 120);
+    if (k === "back") backspace();
+    else if (k === "check") checkWord();
+    else typeLetter(k);
+  };
+
   const onClear = () => {
     if (!clearArmed) {
       setClearArmed(true);
@@ -529,6 +570,12 @@ export default function DiwaliCardPage() {
 
   /* ── Backend API Integration (Submit & Check Workflow) ─────── */
   const submitCrossword = async () => {
+    const filledLettersCount = Object.values(letters).filter((l) => Boolean(l && l.trim())).length;
+    if (filledLettersCount === 0) {
+      showToast("Pehle boxes fill karo! Tap any box to start typing.");
+      return;
+    }
+
     setLoading(true);
     let correctCount = 0;
     const localWrongMarks = new Set<string>();
@@ -559,7 +606,9 @@ export default function DiwaliCardPage() {
       });
 
       const data = await res.json();
-      const isComplete = data?.allCorrect || data?.trophy || correctCount === WORDS.length;
+      const isComplete =
+        filledLettersCount >= 30 &&
+        (correctCount === WORDS.length || Boolean(data?.allCorrect || data?.trophy));
 
       // Update cell error marks from API if available
       if (data?.cellStatus) {
@@ -590,7 +639,7 @@ export default function DiwaliCardPage() {
             : `Great effort! You've correctly solved ${data?.wordsCorrect ?? correctCount} of ${WORDS.length} words.`),
       });
     } catch {
-      const isComplete = correctCount === WORDS.length;
+      const isComplete = correctCount === WORDS.length && filledLettersCount >= 30;
       setWrong(localWrongMarks);
       if (isComplete) {
         exitFocus();
@@ -681,8 +730,25 @@ export default function DiwaliCardPage() {
 
   return (
     <>
+      {/* Top Floating Badge: Built on CogitX Platform */}
+      <header className="platform-header" aria-label="Built on CogitX Platform">
+        <a
+          href="https://cogitx.ai/platform"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="platform-badge"
+          title="Visit CogitX Platform"
+        >
+          <span>Built on CogitX Platform</span>
+          <span className="arrow">→</span>
+        </a>
+      </header>
+
       {/* Diwali Fireworks & Authentic Sound on Completion */}
-      <FireworksOverlay active={Boolean(resultModal)} soundEnabled={soundEnabled} />
+      <FireworksOverlay
+        active={Boolean(resultModal && (resultModal.allCorrect || resultModal.trophy))}
+        soundEnabled={soundEnabled}
+      />
 
       {/* Clue Hint Toast Notification */}
       {hintToast && (
@@ -967,6 +1033,40 @@ export default function DiwaliCardPage() {
         </p>
         <p className={"state" + (cardState.bad ? " bad" : "")}>{cardState.text}</p>
       </div>
+
+      {/* LAYER 5 · KEYBOARD (Mobile only) */}
+      {isMobile && (
+        <div
+          id="keys"
+          ref={keysRef}
+          className={"keys" + (focused ? " show" : "")}
+          aria-label="Keyboard"
+          onPointerDown={onKeyPointerDown}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {KEY_ROWS.map((row, ri) => (
+            <div className="krow" key={ri}>
+              {ri === 1 && <span className="sp" />}
+              {row.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  data-key={k}
+                  className={
+                    "key" +
+                    (k.length > 1 ? " wide" : "") +
+                    (pressed === k ? " press" : "")
+                  }
+                  aria-label={k === "back" ? "Backspace" : k === "check" ? "Check word" : k}
+                >
+                  {k === "back" ? "⌫" : k === "check" ? "Check" : k}
+                </button>
+              ))}
+              {ri === 1 && <span className="sp" />}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div id="toast" role="status" className={toast.show ? "show" : ""}>
         {toast.msg}

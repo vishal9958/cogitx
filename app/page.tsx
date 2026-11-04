@@ -114,12 +114,9 @@ function setUnit() {
 }
 
 export default function DiwaliCardPage() {
-  const saved = useRef<{ letters: Record<string, string>; solved: boolean } | null>(null);
-  if (!saved.current) saved.current = loadSaved();
-
-  /* State */
-  const [letters, setLetters] = useState<Record<string, string>>(saved.current.letters);
-  const [solved, setSolved] = useState<boolean>(saved.current.solved);
+  /* State - always empty on initial load to avoid SSR hydration mismatch and start fresh */
+  const [letters, setLetters] = useState<Record<string, string>>({});
+  const [solved, setSolved] = useState<boolean>(false);
   const [wordIdx, setWordIdx] = useState<number | null>(0); // opens on 1 Across
   const [idx, setIdx] = useState<number>(0);
   const [focused, setFocused] = useState<boolean>(false);
@@ -186,7 +183,9 @@ export default function DiwaliCardPage() {
   /* ── persistence ────────────────────────────────────────────── */
   useEffect(() => {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ letters, solved }));
+      if (Object.keys(letters).length > 0) {
+        localStorage.setItem(SAVE_KEY, JSON.stringify({ letters, solved }));
+      }
     } catch {}
   }, [letters, solved]);
 
@@ -463,6 +462,9 @@ export default function DiwaliCardPage() {
     setWinTick(0);
     setSolved(false);
     setWordIdx(0);
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch {}
     showToast("Puzzle cleared");
   };
 

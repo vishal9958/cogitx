@@ -839,7 +839,7 @@ export default function DiwaliCardPage() {
                   onClick={submitCrossword}
                   disabled={loading}
                 >
-                  {loading ? "Checking with AI..." : "Submit & Check"}
+                  {loading ? "Checking..." : "Check"}
                 </button>
 
                 <button

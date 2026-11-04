@@ -294,12 +294,12 @@ export default function FireworksOverlay({
       const targetY =
         Math.random() * (canvas.height * 0.35) + canvas.height * 0.08;
 
-      // Fast, snappy ascent (speed 22-28px/frame instead of 14)
+      // Slower, more graceful ascent (speed 10-15px/frame)
       rockets.push({
         x,
         y: canvas.height + 20,
         targetY,
-        vy: -(Math.random() * 6 + 23),
+        vy: -(Math.random() * 5 + 10),
         color: theme.primary,
         glowColor: theme.glow,
         history: [],
@@ -324,16 +324,16 @@ export default function FireworksOverlay({
         alpha: 0.85,
       });
 
-      // High streamer count with fast, energetic radial blast
-      const streamerCount = Math.floor(Math.random() * 26) + 80;
+      // Moderate streamer count with graceful radial burst
+      const streamerCount = Math.floor(Math.random() * 20) + 55;
 
       for (let i = 0; i < streamerCount; i++) {
         const angle =
           (Math.PI * 2 * i) / streamerCount +
           (Math.random() - 0.5) * 0.18;
 
-        // Snappy initial velocity (speed 7 to 16px/frame instead of 2.2 to 5.8)
-        const speed = Math.random() * 9 + 7.5;
+        // Moderate initial velocity (speed 4 to 9px/frame - slow and graceful)
+        const speed = Math.random() * 5 + 4;
         const isAccent = Math.random() > 0.6;
         const color = isAccent ? theme.glow : theme.primary;
 
@@ -345,30 +345,30 @@ export default function FireworksOverlay({
           color,
           glowColor: theme.glow,
           alpha: 1,
-          decay: Math.random() * 0.016 + 0.013, // Fast, lively fade
-          gravity: Math.random() * 0.03 + 0.075, // Graceful weeping willow cascade
-          friction: 0.945, // Crisp initial expansion then smooth flow
+          decay: Math.random() * 0.009 + 0.006, // Slower, longer lasting fade
+          gravity: Math.random() * 0.025 + 0.05, // Gentle weeping willow cascade
+          friction: 0.965, // Smoother expansion
           lineWidth: Math.random() * 1.6 + 1.3,
           history: [],
-          maxHistory: Math.floor(Math.random() * 6) + 16,
+          maxHistory: Math.floor(Math.random() * 8) + 20,
           sparkle: Math.random() > 0.35,
         });
       }
     };
 
-    // Staggered barrage on start
+    // Staggered launch on start
     launchRocket();
-    setTimeout(launchRocket, 200);
-    setTimeout(launchRocket, 450);
+    setTimeout(launchRocket, 600);
+    setTimeout(launchRocket, 1300);
 
     const launchInterval = setInterval(() => {
       if (!isRunning) return;
       launchRocket();
-      // Double barrage
-      if (Math.random() > 0.35) {
-        setTimeout(launchRocket, Math.random() * 250 + 100);
+      // Occasional double
+      if (Math.random() > 0.6) {
+        setTimeout(launchRocket, Math.random() * 500 + 300);
       }
-    }, 950);
+    }, 1800);
 
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);

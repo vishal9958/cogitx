@@ -251,29 +251,29 @@ const MYSTERY_SHADED_KEYS = [
   { key: "4-9", num: 5 },  // K
 ];
 
-// Custom per-box zoom scale so every word has its ideal magnification
+// Custom per-box zoom scale so every word has its tailored magnification
 const CLUE_ZOOM_LEVELS: Record<string, number> = {
-  // 4-letter short words -> deeper zoom
-  "1A": 2.45,
-  "3D": 2.38,
-  "5A": 2.45,
-  "8A": 2.45,
+  // 4-letter short words -> deeper focus
+  "1A": 1.95,
+  "3D": 1.88,
+  "5A": 1.95,
+  "8A": 1.92,
 
   // 5-letter medium words
-  "2D": 2.2,
-  "13D": 2.2,
+  "2D": 1.76,
+  "13D": 1.74,
 
   // 6-letter medium words
-  "7A": 2.12,
-  "9D": 2.08,
-  "11D": 2.08,
-  "12A": 2.08,
-  "14A": 2.12,
+  "7A": 1.68,
+  "9D": 1.64,
+  "11D": 1.65,
+  "12A": 1.62,
+  "14A": 1.68,
 
-  // 7-8 letter long words -> wider view so whole word fits
-  "4D": 1.78,
-  "6D": 1.88,
-  "10A": 1.82,
+  // 7-8 letter long words -> wider view so whole word and surroundings look amazing
+  "4D": 1.46,
+  "6D": 1.52,
+  "10A": 1.48,
 };
 
 export default function DiwaliCardPage() {
@@ -335,13 +335,20 @@ export default function DiwaliCardPage() {
 
   // Select a clue, smoothly swoop/zoom, and focus target cell
   const handleSelectAndZoomClue = (clue: ClueDef) => {
+    if (isZoomed && activeClue?.id === clue.id) {
+      // Clicking the already active clue toggles back to full view
+      setIsZoomed(false);
+      setIsSwooping(false);
+      return;
+    }
+
     if (isZoomed && activeClue && activeClue.id !== clue.id) {
       // Camera swoop: slightly dip zoom out mid-flight while panning, then zoom back in
       setIsSwooping(true);
       setActiveClue(clue);
       setTimeout(() => {
         setIsSwooping(false);
-      }, 170);
+      }, 210);
     } else {
       setActiveClue(clue);
       setIsZoomed(true);
@@ -367,38 +374,20 @@ export default function DiwaliCardPage() {
     setIsSwooping(false);
   };
 
-  // Cycle to previous clue in popover
-  const handlePrevClue = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!activeClue) return;
-    const currIdx = CLUES_DATA.findIndex((c) => c.id === activeClue.id);
-    const prevIdx = (currIdx - 1 + CLUES_DATA.length) % CLUES_DATA.length;
-    handleSelectAndZoomClue(CLUES_DATA[prevIdx]);
-  };
-
-  // Cycle to next clue in popover
-  const handleNextClue = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!activeClue) return;
-    const currIdx = CLUES_DATA.findIndex((c) => c.id === activeClue.id);
-    const nextIdx = (currIdx + 1) % CLUES_DATA.length;
-    handleSelectAndZoomClue(CLUES_DATA[nextIdx]);
-  };
-
-  // Calculate zoom transform with custom magnification per clue and camera swoop
+  // Calculate zoom transform with tailored magnification per clue and camera swoop
   const getZoomTransform = (clue: ClueDef | null) => {
     if (!clue || !isZoomed) {
       return { x: 0, y: 0, scale: 1 };
     }
 
     // Custom tailored zoom level for this specific clue
-    let targetScale = CLUE_ZOOM_LEVELS[clue.id] || 2.15;
+    let targetScale = CLUE_ZOOM_LEVELS[clue.id] || 1.65;
     if (typeof window !== "undefined" && window.innerWidth < 640) {
-      targetScale *= 0.85;
+      targetScale *= 0.88;
     }
 
     // Dip scale down during camera swoop when shifting between boxes
-    const S = isSwooping ? targetScale * 0.74 : targetScale;
+    const S = isSwooping ? targetScale * 0.78 : targetScale;
 
     let minR = 999, maxR = -1, minC = 999, maxC = -1;
     clue.cells.forEach((k) => {
@@ -412,32 +401,11 @@ export default function DiwaliCardPage() {
     const wordCenterXPct = ((43 + ((minC + maxC) / 2 + 0.5) * 32) / 730) * 100;
     const wordCenterYPct = ((52 + ((minR + maxR) / 2 + 0.5) * 32) / 1024) * 100;
 
-    // Anchor word horizontally at 50% and vertically at ~31% of viewport
+    // Center word in the natural optical center of crossword grid (~43% of card height)
     const tx = 50 - wordCenterXPct * S;
-    const ty = 31 - wordCenterYPct * S;
+    const ty = 43 - wordCenterYPct * S;
 
     return { x: tx, y: ty, scale: S };
-  };
-
-  // Calculate popover position directly beneath the active word
-  const getPopoverPosition = (clue: ClueDef | null) => {
-    if (!clue) return { leftPct: 50, topPct: 50 };
-
-    let maxR = -1, minC = 999, maxC = -1;
-    clue.cells.forEach((k) => {
-      const [r, c] = k.split("-").map(Number);
-      if (r > maxR) maxR = r;
-      if (c < minC) minC = c;
-      if (c > maxC) maxC = c;
-    });
-
-    const wordCenterXPct = ((43 + ((minC + maxC) / 2 + 0.5) * 32) / 730) * 100;
-    const wordBottomPct = ((52 + (maxR + 1) * 32) / 1024) * 100;
-
-    return {
-      leftPct: wordCenterXPct,
-      topPct: wordBottomPct + 1.2, // ~12px directly below word
-    };
   };
 
   // Global key listener for Escape key to exit zoom smoothly
@@ -726,7 +694,6 @@ export default function DiwaliCardPage() {
   };
 
   const zoomTransform = getZoomTransform(activeClue);
-  const popoverPos = getPopoverPosition(activeClue);
 
   return (
     <div className="page-wrapper">
@@ -826,7 +793,7 @@ export default function DiwaliCardPage() {
               ? `translate(${zoomTransform.x}%, ${zoomTransform.y}%) scale(${zoomTransform.scale})`
               : "translate(0%, 0%) scale(1)",
             transformOrigin: "0 0",
-            transition: "transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)",
+            transition: "transform 0.65s cubic-bezier(0.22, 1, 0.36, 1)",
           }}
         >
           <img
@@ -834,64 +801,6 @@ export default function DiwaliCardPage() {
             alt="CogitX AI Diwali Crossword Greeting"
             className="card-image"
           />
-
-          {/* Dimmer Overlay in Zoom Mode (click anywhere outside word to zoom out) */}
-          {isZoomed && (
-            <div
-              className="zoom-dim-overlay"
-              onClick={handleDoneZoom}
-              title="Click to zoom out"
-            />
-          )}
-
-          {/* Floating Clue Popover Attached Directly Under Zoomed Word */}
-          {isZoomed && activeClue && (
-            <div
-              className="clue-floating-popover"
-              style={{
-                left: `${Math.min(78, Math.max(22, popoverPos.leftPct))}%`,
-                top: `${popoverPos.topPct}%`,
-                transform: "translate(-50%, 0)",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="popover-caret" />
-              <div className="popover-header">
-                <button
-                  type="button"
-                  className="popover-nav-btn"
-                  onClick={handlePrevClue}
-                  title="Previous Clue"
-                >
-                  ‹
-                </button>
-                <div className="popover-title-group">
-                  <span className="popover-clue-label">
-                    {activeClue.number} {activeClue.direction.toUpperCase()}
-                  </span>
-                  <span className="popover-clue-letters">
-                    {activeClue.solution.length} letters
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="popover-nav-btn"
-                  onClick={handleNextClue}
-                  title="Next Clue"
-                >
-                  ›
-                </button>
-                <button
-                  type="button"
-                  className="popover-done-btn"
-                  onClick={handleDoneZoom}
-                >
-                  Done
-                </button>
-              </div>
-              <div className="popover-clue-body">{activeClue.clue}</div>
-            </div>
-          )}
 
           {/* Interactive Crossword Input Overlay */}
           <section
@@ -1022,6 +931,19 @@ export default function DiwaliCardPage() {
 
         {/* Card Footer Subtitle (Progress saves on this device) */}
         <div className="card-footer-note">
+          {isZoomed && (
+            <>
+              <button
+                type="button"
+                className="footer-reset-zoom-btn"
+                onClick={handleDoneZoom}
+                title="Zoom out to full view"
+              >
+                Reset Zoom
+              </button>
+              <span className="footer-dot">·</span>
+            </>
+          )}
           <button
             type="button"
             className="footer-clear-btn"

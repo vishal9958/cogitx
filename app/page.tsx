@@ -243,6 +243,24 @@ const CROSSWORD_CELLS: CellDef[] = [
   { r: 15, c: 10, solution: "L" },
 ];
 
+// Custom per-box zoom scale so every word has its ideal magnification
+const CLUE_ZOOM_LEVELS: Record<string, number> = {
+  "1A": 2.45,
+  "3D": 2.38,
+  "5A": 2.45,
+  "8A": 2.45,
+  "2D": 2.2,
+  "13D": 2.2,
+  "7A": 2.12,
+  "9D": 2.08,
+  "11D": 2.08,
+  "12A": 2.08,
+  "14A": 2.12,
+  "4D": 1.78,
+  "6D": 1.88,
+  "10A": 1.82,
+};
+
 export default function DiwaliCardPage() {
   const [letters, setLetters] = useState<Record<string, string>>({});
   const [cellStatus, setCellStatus] = useState<Record<string, string>>({});
@@ -251,10 +269,11 @@ export default function DiwaliCardPage() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [hintsLeft, setHintsLeft] = useState(3);
 
-  // Active cell, zoom, and word tracking
+  // Active cell, zoom, camera swoop, and word tracking
   const [focusedCell, setFocusedCell] = useState<string | null>(null);
   const [activeClue, setActiveClue] = useState<ClueDef | null>(null);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isSwooping, setIsSwooping] = useState(false);
   const [hintedCell, setHintedCell] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -299,10 +318,19 @@ export default function DiwaliCardPage() {
   const acrossClues = CLUES_DATA.filter((c) => c.direction === "across");
   const downClues = CLUES_DATA.filter((c) => c.direction === "down");
 
-  // Select a clue, zoom in smoothly, and focus its first cell
+  // Select a clue, smoothly swoop/zoom, and focus target cell
   const handleSelectAndZoomClue = (clue: ClueDef) => {
-    setActiveClue(clue);
-    setIsZoomed(true);
+    if (isZoomed && activeClue && activeClue.id !== clue.id) {
+      // Camera swoop: slightly dip zoom out mid-flight while panning, then zoom back in
+      setIsSwooping(true);
+      setActiveClue(clue);
+      setTimeout(() => {
+        setIsSwooping(false);
+      }, 170);
+    } else {
+      setActiveClue(clue);
+      setIsZoomed(true);
+    }
 
     // Pick first empty/unsolved cell, or fallback to first cell
     const targetCell =
@@ -313,7 +341,7 @@ export default function DiwaliCardPage() {
       setFocusedCell(targetCell);
       setTimeout(() => {
         inputRefs.current[targetCell]?.focus();
-      }, 50);
+      }, 60);
     }
   };
 
@@ -321,6 +349,7 @@ export default function DiwaliCardPage() {
   const handleDoneZoom = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setIsZoomed(false);
+    setIsSwooping(false);
   };
 
   // Cycle to previous clue in popover
@@ -341,13 +370,20 @@ export default function DiwaliCardPage() {
     handleSelectAndZoomClue(CLUES_DATA[nextIdx]);
   };
 
-  // Calculate zoom transform so active word is nicely centered in viewport
+  // Calculate zoom transform with custom magnification per clue and camera swoop
   const getZoomTransform = (clue: ClueDef | null) => {
     if (!clue || !isZoomed) {
       return { x: 0, y: 0, scale: 1 };
     }
 
-    const S = 2.15; // 2.15x zoom magnification
+    // Custom tailored zoom level for this specific clue
+    let targetScale = CLUE_ZOOM_LEVELS[clue.id] || 2.15;
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      targetScale *= 0.85;
+    }
+
+    // Dip scale down during camera swoop when shifting between boxes
+    const S = isSwooping ? targetScale * 0.74 : targetScale;
 
     let minR = 999, maxR = -1, minC = 999, maxC = -1;
     clue.cells.forEach((k) => {
@@ -394,6 +430,7 @@ export default function DiwaliCardPage() {
     const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape" && isZoomed) {
         setIsZoomed(false);
+        setIsSwooping(false);
       }
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -412,18 +449,20 @@ export default function DiwaliCardPage() {
     }
   };
 
-  // Cell click handler: smooth zoom to word if not zoomed
+  // Cell click handler: smooth zoom/swoop to word
   const handleCellClick = (key: string) => {
     const matchingClues = cellToClues[key];
     if (matchingClues && matchingClues.length > 0) {
-      const clue = (activeClue && matchingClues.some((c) => c.id === activeClue.id))
-        ? activeClue
-        : matchingClues[0];
-      setActiveClue(clue);
-      setFocusedCell(key);
-      if (!isZoomed) {
-        setIsZoomed(true);
+      const clue =
+        activeClue && matchingClues.some((c) => c.id === activeClue.id)
+          ? activeClue
+          : matchingClues[0];
+
+      if (!isZoomed || activeClue?.id !== clue.id) {
+        handleSelectAndZoomClue(clue);
       }
+      setFocusedCell(key);
+      inputRefs.current[key]?.focus();
     }
   };
 
@@ -759,14 +798,6 @@ export default function DiwaliCardPage() {
         </div>
       )}
 
-      {/* Active Clue Bar (Shown above the card only when clue is selected and NOT zoomed) */}
-      {activeClue && !isZoomed && (
-        <header className="active-clue-bar" aria-live="polite">
-          <span className="clue-badge">{activeClue.label}</span>
-          <span className="clue-text">{activeClue.clue}</span>
-        </header>
-      )}
-
       {/* Exact 1:1 Replica Card with Smooth Word Zoom */}
       <main
         ref={containerRef}
@@ -779,7 +810,7 @@ export default function DiwaliCardPage() {
               ? `translate(${zoomTransform.x}%, ${zoomTransform.y}%) scale(${zoomTransform.scale})`
               : "translate(0%, 0%) scale(1)",
             transformOrigin: "0 0",
-            transition: "transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)",
+            transition: "transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)",
           }}
         >
           <img
@@ -959,52 +990,64 @@ export default function DiwaliCardPage() {
             </div>
           </section>
         </div>
+
+        {/* Card Form Action Buttons (Docked inside the card frame at the bottom) */}
+        <footer className="card-form-actions" aria-label="Game Actions">
+          <button
+            type="button"
+            className="form-action-btn primary"
+            onClick={submitCrossword}
+            disabled={loading}
+          >
+            <span>⚡</span>
+            <span>{loading ? "Checking..." : "Submit & Check"}</span>
+          </button>
+
+          <button
+            type="button"
+            className="form-action-btn hint"
+            onClick={requestHint}
+            disabled={loading || hintsLeft <= 0}
+            title={
+              hintsLeft <= 0
+                ? "All 3 hints used"
+                : activeClue
+                ? `Get hint for ${activeClue.label} (${hintsLeft} left)`
+                : `Get a hint (${hintsLeft} left)`
+            }
+          >
+            <span>💡</span>
+            <span>
+              Hint {activeClue ? `(${activeClue.label})` : ""} [{hintsLeft}/3]
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="form-action-btn secondary"
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            title="Toggle Cracker Audio"
+          >
+            <span>{soundEnabled ? "🔊 Sound: On" : "🔇 Sound: Off"}</span>
+          </button>
+
+          <button
+            type="button"
+            className="form-action-btn secondary"
+            onClick={clearAll}
+          >
+            Clear
+          </button>
+
+          <button
+            type="button"
+            className="form-action-btn secondary"
+            onClick={printCard}
+          >
+            Print / PDF
+          </button>
+        </footer>
       </main>
-
-      {/* Floating Toolbar with CogitX Actions */}
-      <nav className="floating-toolbar" aria-label="Game Actions">
-        <button
-          type="button"
-          className="toolbar-btn primary"
-          onClick={submitCrossword}
-          disabled={loading}
-        >
-          {loading ? "Checking..." : "⚡ Submit & Check"}
-        </button>
-
-        <button
-          type="button"
-          className="toolbar-btn accent"
-          onClick={requestHint}
-          disabled={loading || hintsLeft <= 0}
-          title={
-            hintsLeft <= 0
-              ? "All 3 hints used"
-              : activeClue
-              ? `Get hint for ${activeClue.label} (${hintsLeft} left)`
-              : `Get a hint (${hintsLeft} left)`
-          }
-        >
-          💡 Hint {activeClue ? `(${activeClue.label})` : ""} [{hintsLeft}/3]
-        </button>
-
-        <button
-          type="button"
-          className="toolbar-btn"
-          onClick={() => setSoundEnabled(!soundEnabled)}
-          title="Toggle Cracker Audio"
-        >
-          {soundEnabled ? "🔊 Sound: On" : "🔇 Sound: Off"}
-        </button>
-
-        <button type="button" className="toolbar-btn" onClick={clearAll}>
-          Clear
-        </button>
-
-        <button type="button" className="toolbar-btn" onClick={printCard}>
-          Print / PDF
-        </button>
-      </nav>
     </div>
   );
 }

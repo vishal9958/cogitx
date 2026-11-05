@@ -212,6 +212,23 @@ export default function DiwaliCardPage() {
   const [fireworksDone, setFireworksDone] = useState(() => {
     try { return sessionStorage.getItem("cogitx-fireworks-done") === "1"; } catch { return false; }
   });
+  const fireworksDoneRef = useRef(fireworksDone);
+  fireworksDoneRef.current = fireworksDone;
+  // Drives the fireworks overlay; true from the moment of the win until the result modal is closed
+  const [celebrating, setCelebrating] = useState(false);
+
+  const startCelebration = useCallback(() => {
+    if (fireworksDoneRef.current) return;
+    fireworksDoneRef.current = true;
+    setFireworksDone(true);
+    setCelebrating(true);
+    try { sessionStorage.setItem("cogitx-fireworks-done", "1"); } catch { }
+  }, []);
+
+  const closeResultModal = () => {
+    setResultModal(null);
+    setCelebrating(false);
+  };
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [alreadyPlayedEntry, setAlreadyPlayedEntry] = useState<{
@@ -506,16 +523,23 @@ export default function DiwaliCardPage() {
   };
 
   /* ── solved detection ───────────────────────────────────────── */
+  // Timer lives in a ref: setSolved(true) re-runs this effect, and an effect
+  // cleanup would cancel the timer before it fires.
+  const winTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(winTimerRef.current), []);
+
   useEffect(() => {
     const all = allCorrect(letters);
     if (all && !solved) {
       setSolved(true);
-      const t = setTimeout(() => {
+      clearTimeout(winTimerRef.current);
+      winTimerRef.current = setTimeout(() => {
         exitFocus();
         setWinTick((n) => n + 1);
         showToast("Solved. The shaded squares spell SPARK — Happy Diwali!");
         // Only show result modal + fireworks if not already done this session
-        if (!fireworksDone) {
+        if (!fireworksDoneRef.current) {
+          startCelebration();
           setResultModal({
             wordsCorrect: WORDS.length,
             wordsTotal: WORDS.length,
@@ -525,10 +549,11 @@ export default function DiwaliCardPage() {
           });
         }
       }, 320);
-      return () => clearTimeout(t);
+    } else if (!all && solved) {
+      setSolved(false);
+      clearTimeout(winTimerRef.current);
     }
-    if (!all && solved) setSolved(false);
-  }, [letters, solved, exitFocus, showToast, fireworksDone]);
+  }, [letters, solved, exitFocus, showToast, startCelebration]);
 
   /* ── events ─────────────────────────────────────────────────── */
   const onCellClick = (id: string) => {
@@ -704,6 +729,9 @@ export default function DiwaliCardPage() {
     const calculatedScore = Math.max(0, correctCount * 100 + sparkBonus - hintPenalty - wrongPenalty);
     const timeTakenSecs = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
 
+    // Locally verified win: celebrate on the tap itself instead of after the (slow) API
+    if (correctCount === WORDS.length && filledLettersCount >= 30) startCelebration();
+
     try {
       const res = await fetch("/api/crossword", {
         method: "POST",
@@ -764,10 +792,7 @@ export default function DiwaliCardPage() {
         }
       }
 
-      if (isComplete && !fireworksDone) {
-        setFireworksDone(true);
-        try { sessionStorage.setItem("cogitx-fireworks-done", "1"); } catch { }
-      }
+      if (isComplete) startCelebration();
 
       setResultModal({
         wordsCorrect: data?.wordsCorrect ?? correctCount,
@@ -817,10 +842,7 @@ export default function DiwaliCardPage() {
         exitFocus();
         setWinTick((n) => n + 1);
         setSolved(true);
-        if (!fireworksDone) {
-          setFireworksDone(true);
-          try { sessionStorage.setItem("cogitx-fireworks-done", "1"); } catch { }
-        }
+        startCelebration();
       }
       setResultModal({
         wordsCorrect: correctCount,
@@ -1064,7 +1086,7 @@ export default function DiwaliCardPage() {
 
       {/* Diwali Fireworks & Authentic Sound on Completion */}
       <FireworksOverlay
-        active={fireworksDone && Boolean(resultModal)}
+        active={celebrating}
         soundEnabled={soundEnabled}
       />
 
@@ -1094,7 +1116,7 @@ export default function DiwaliCardPage() {
 
       {/* Celebratory Result Modal */}
       {resultModal && (
-        <div className="modal-backdrop" onClick={() => setResultModal(null)} role="dialog" aria-modal="true">
+        <div className="modal-backdrop" onClick={closeResultModal} role="dialog" aria-modal="true">
           <div className="result-modal" onClick={(e) => e.stopPropagation()}>
             <div className={`result-badge ${resultModal.trophy ? "trophy" : "progress"}`}>
               {resultModal.trophy ? "🎆 Happy Diwali Champion! 🏆" : "✨ Diwali Greetings"}
@@ -1129,14 +1151,14 @@ export default function DiwaliCardPage() {
               >
                 {soundEnabled ? "Sound: On" : "Sound: Off"}
               </button>
-              <button type="button" className="modal-btn" onClick={() => setResultModal(null)}>
+              <button type="button" className="modal-btn" onClick={closeResultModal}>
                 Close & Continue
               </button>
             </div>
             <div style={{ textAlign: "center", marginTop: 12 }}>
               <button
                 type="button"
-                onClick={() => { setResultModal(null); setShowLeaderboard(true); }}
+                onClick={() => { closeResultModal(); setShowLeaderboard(true); }}
                 style={{
                   display: "inline-block",
                   background: "none",

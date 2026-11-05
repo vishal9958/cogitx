@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import FireworksOverlay from "../components/FireworksOverlay";
+import LeaderboardPanel from "../components/LeaderboardPanel";
 
 
 interface WordDef {
@@ -151,6 +152,8 @@ export default function DiwaliCardPage() {
     allCorrect: boolean;
     trophy: boolean;
     aiMessage: string;
+    finalScore?: number;
+    rank?: number | null;
   } | null>(null);
 
   /* Refs */
@@ -182,26 +185,80 @@ export default function DiwaliCardPage() {
     focused,
   });
   latest.current = { letters, solved, wordIdx, idx, focused };
-  const [player, setPlayer] = useState<{ name: string; email: string } | null>(null);
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [wrongChecks, setWrongChecks] = useState(0);
-  const [saved, setSaved] = useState(false);
+  const [player, setPlayer] = useState<{ name: string; email: string } | null>(() => {
+    // Restore player from sessionStorage so Back navigation doesn't reset the game
+    try {
+      const raw = sessionStorage.getItem("cogitx-player");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+  const [startedAt, setStartedAt] = useState<number | null>(() => {
+    try {
+      const raw = sessionStorage.getItem("cogitx-started-at");
+      return raw ? parseInt(raw) : null;
+    } catch { return null; }
+  });
+  const [wrongChecks, setWrongChecks] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem("cogitx-wrong-checks");
+      return raw ? parseInt(raw) : 0;
+    } catch { return 0; }
+  });
+  const [saved, setSaved] = useState(() => {
+    try { return sessionStorage.getItem("cogitx-saved") === "1"; } catch { return false; }
+  });
   const [form, setForm] = useState({ name: "", email: "" });
+  // Track if fireworks have already been shown this session — don't re-trigger on nav back
+  const [fireworksDone, setFireworksDone] = useState(() => {
+    try { return sessionStorage.getItem("cogitx-fireworks-done") === "1"; } catch { return false; }
+  });
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [alreadyPlayedEntry, setAlreadyPlayedEntry] = useState<{
+    player_name: string; final_score: number; time_taken_secs: number;
+    words_correct: number; hints_used: number; rank: number;
+  } | null>(null);
 
-  const startGame = () => {
-    if (!form.name.trim() || !/^\S+@\S+\.\S+$/.test(form.email)) {
-      showToast("Please enter a valid name and email");
-      return;
+  const startGame = async () => {
+    const trimmedName = form.name.trim();
+    const trimmedEmail = form.email.trim().toLowerCase();
+    if (!trimmedName) { showToast("Please enter your name"); return; }
+    if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) { showToast("Please enter a valid email address"); return; }
+
+    // Check if this email already played
+    setCheckingEmail(true);
+    try {
+      const res = await fetch(`/api/leaderboard?email=${encodeURIComponent(trimmedEmail)}`);
+      const data = await res.json();
+      if (data.success && data.alreadyPlayed && data.entry) {
+        setAlreadyPlayedEntry(data.entry);
+        setCheckingEmail(false);
+        return; // Stop — show already-played modal
+      }
+    } catch {
+      // Network error — allow to proceed
     }
-    // fresh start for every new player
+    setCheckingEmail(false);
+
+    // Fresh start
     try { localStorage.removeItem(SAVE_KEY); } catch { }
     latest.current.letters = {};
     setLetters({});
     setHintsLeft(3);
     setWrongChecks(0);
     setSaved(false);
-    setPlayer({ name: form.name.trim(), email: form.email.trim().toLowerCase() });
-    setStartedAt(Date.now());
+    setFireworksDone(false);
+    const p = { name: trimmedName, email: trimmedEmail };
+    const now = Date.now();
+    setPlayer(p);
+    setStartedAt(now);
+    try {
+      sessionStorage.setItem("cogitx-player", JSON.stringify(p));
+      sessionStorage.setItem("cogitx-started-at", String(now));
+      sessionStorage.setItem("cogitx-wrong-checks", "0");
+      sessionStorage.setItem("cogitx-saved", "0");
+      sessionStorage.setItem("cogitx-fireworks-done", "0");
+    } catch { }
   };
 
   /* ── unit ───────────────────────────────────────────────────── */
@@ -238,6 +295,19 @@ export default function DiwaliCardPage() {
     clearTimeout(toastT.current as any);
     toastT.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 3600);
   }, []);
+
+  /* ── persist game session state to sessionStorage ───────────── */
+  useEffect(() => {
+    try { sessionStorage.setItem("cogitx-wrong-checks", String(wrongChecks)); } catch { }
+  }, [wrongChecks]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("cogitx-saved", saved ? "1" : "0"); } catch { }
+  }, [saved]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("cogitx-fireworks-done", fireworksDone ? "1" : "0"); } catch { }
+  }, [fireworksDone]);
 
   /* ── zoom (smooth camera swoop to target word with custom scale) ─ */
   const positionCaret = useCallback(() => {
@@ -444,18 +514,21 @@ export default function DiwaliCardPage() {
         exitFocus();
         setWinTick((n) => n + 1);
         showToast("Solved. The shaded squares spell SPARK — Happy Diwali!");
-        setResultModal({
-          wordsCorrect: WORDS.length,
-          wordsTotal: WORDS.length,
-          allCorrect: true,
-          trophy: true,
-          aiMessage: "Nailed it with a perfect score! The shaded squares spell SPARK. Happy Diwali from CogitX!",
-        });
+        // Only show result modal + fireworks if not already done this session
+        if (!fireworksDone) {
+          setResultModal({
+            wordsCorrect: WORDS.length,
+            wordsTotal: WORDS.length,
+            allCorrect: true,
+            trophy: true,
+            aiMessage: "Nailed it with a perfect score! The shaded squares spell SPARK. Happy Diwali from CogitX!",
+          });
+        }
       }, 320);
       return () => clearTimeout(t);
     }
     if (!all && solved) setSolved(false);
-  }, [letters, solved, exitFocus, showToast]);
+  }, [letters, solved, exitFocus, showToast, fireworksDone]);
 
   /* ── events ─────────────────────────────────────────────────── */
   const onCellClick = (id: string) => {
@@ -615,13 +688,29 @@ export default function DiwaliCardPage() {
       }
     });
 
+    // Increment wrong check counter — only counts if not all correct
+    const newWrongChecks = correctCount < WORDS.length ? wrongChecks + 1 : wrongChecks;
+    if (correctCount < WORDS.length) setWrongChecks(newWrongChecks);
+
+    // Score formula (server-side uses identical logic):
+    // Base: 100pts per correct word
+    // SPARK bonus: +300 if all 14 words correct
+    // Hint penalty: -100 per hint used
+    // Wrong attempt penalty: -20 per wrong check (only counts partial/failed checks)
+    const hintsUsed = 3 - hintsLeft;
+    const sparkBonus = correctCount === WORDS.length ? 300 : 0;
+    const hintPenalty = hintsUsed * 100;
+    const wrongPenalty = newWrongChecks * 20;
+    const calculatedScore = Math.max(0, correctCount * 100 + sparkBonus - hintPenalty - wrongPenalty);
+    const timeTakenSecs = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+
     try {
       const res = await fetch("/api/crossword", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "submit",
-          playerName: "Player",
+          playerName: player?.name || "Player",
           grid: letters,
         }),
       });
@@ -648,6 +737,38 @@ export default function DiwaliCardPage() {
         setSolved(true);
       }
 
+      // Save to leaderboard if not already saved
+      let rank: number | null = null;
+      if (!saved && player) {
+        try {
+          const lbRes = await fetch("/api/leaderboard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              player_name: player.name,
+              player_email: player.email,
+              words_correct: data?.wordsCorrect ?? correctCount,
+              hints_used: hintsUsed,
+              wrong_attempts: newWrongChecks,
+              time_taken_secs: timeTakenSecs,
+            }),
+          });
+          const lbData = await lbRes.json();
+          if (lbData.success) {
+            setSaved(true);
+            try { sessionStorage.setItem("cogitx-saved", "1"); } catch { }
+            rank = lbData.rank ?? null;
+          }
+        } catch (e) {
+          console.error("Leaderboard save failed:", e);
+        }
+      }
+
+      if (isComplete && !fireworksDone) {
+        setFireworksDone(true);
+        try { sessionStorage.setItem("cogitx-fireworks-done", "1"); } catch { }
+      }
+
       setResultModal({
         wordsCorrect: data?.wordsCorrect ?? correctCount,
         wordsTotal: data?.wordsTotal ?? WORDS.length,
@@ -658,14 +779,48 @@ export default function DiwaliCardPage() {
           (isComplete
             ? "Nailed it with a perfect score! The shaded squares spell SPARK. Wishing you and your loved ones a very Happy Diwali!"
             : `Great effort! You've correctly solved ${data?.wordsCorrect ?? correctCount} of ${WORDS.length} words.`),
+        finalScore: calculatedScore,
+        rank,
       });
     } catch {
       const isComplete = correctCount === WORDS.length && filledLettersCount >= 30;
       setWrong(localWrongMarks);
+
+      // Save to leaderboard even on API error
+      let rank: number | null = null;
+      if (!saved && player) {
+        try {
+          const lbRes = await fetch("/api/leaderboard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              player_name: player.name,
+              player_email: player.email,
+              words_correct: correctCount,
+              hints_used: hintsUsed,
+              wrong_attempts: newWrongChecks,
+              time_taken_secs: timeTakenSecs,
+            }),
+          });
+          const lbData = await lbRes.json();
+          if (lbData.success) {
+            setSaved(true);
+            try { sessionStorage.setItem("cogitx-saved", "1"); } catch { }
+            rank = lbData.rank ?? null;
+          }
+        } catch (e) {
+          console.error("Leaderboard save failed:", e);
+        }
+      }
+
       if (isComplete) {
         exitFocus();
         setWinTick((n) => n + 1);
         setSolved(true);
+        if (!fireworksDone) {
+          setFireworksDone(true);
+          try { sessionStorage.setItem("cogitx-fireworks-done", "1"); } catch { }
+        }
       }
       setResultModal({
         wordsCorrect: correctCount,
@@ -675,6 +830,8 @@ export default function DiwaliCardPage() {
         aiMessage: isComplete
           ? "Nailed it with a perfect score! The shaded squares spell SPARK. Wishing you a very Happy Diwali!"
           : `Great effort! You've correctly solved ${correctCount} of ${WORDS.length} words. Keep going!`,
+        finalScore: calculatedScore,
+        rank,
       });
     } finally {
       setLoading(false);
@@ -753,28 +910,144 @@ export default function DiwaliCardPage() {
     <>
       {!player && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="result-modal">
-            <div className="result-badge progress">🪔 Diwali Crossword</div>
-            <input
-              placeholder="Your name"
-              value={form.name}
-              maxLength={30}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              style={{ padding: 10, borderRadius: 8, width: "100%", marginBottom: 8 }}
+          <div className="result-modal" style={{ maxWidth: 360, textAlign: "center", paddingTop: 20 }}>
+            {/* Logo */}
+            <img
+              src="/assets/logo.png"
+              alt="CogitX"
+              style={{
+                display: "block",
+                margin: "0 auto 14px",
+                maxWidth: 120,
+                width: "50%",
+                height: "auto",
+              }}
             />
-            <input
-              placeholder="Email"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              style={{ padding: 10, borderRadius: 8, width: "100%", marginBottom: 12 }}
-            />
-            <button type="button" className="modal-btn" onClick={startGame}>
-              Start Game
-            </button>
+            <div className="result-badge progress" style={{ marginBottom: 12 }}>
+              🪔 Diwali Crossword 2026
+            </div>
+            <p style={{
+              fontSize: "0.82rem",
+              color: "#6b7280",
+              marginBottom: 20,
+              lineHeight: 1.55,
+            }}>
+              Enter your details to play and appear on the leaderboard.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+              <input
+                placeholder="Your name"
+                value={form.name}
+                maxLength={30}
+                autoComplete="name"
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") startGame(); }}
+                style={{
+                  padding: "11px 14px",
+                  borderRadius: 10,
+                  border: "1.5px solid #d1d5db",
+                  background: "#f9fafb",
+                  color: "#111827",
+                  fontSize: "0.95rem",
+                  outline: "none",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  caretColor: "#111827",
+                }}
+              />
+              <input
+                placeholder="Email address"
+                type="email"
+                value={form.email}
+                autoComplete="email"
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") startGame(); }}
+                style={{
+                  padding: "11px 14px",
+                  borderRadius: 10,
+                  border: "1.5px solid #d1d5db",
+                  background: "#f9fafb",
+                  color: "#111827",
+                  fontSize: "0.95rem",
+                  outline: "none",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  caretColor: "#111827",
+                }}
+              />
+            </div>
+            {/* Centered auto-width button, grey default → black on hover */}
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <button type="button" className="modal-btn start-game-btn" onClick={startGame} disabled={checkingEmail}>
+                {checkingEmail ? "Checking…" : "Start Game 🎮"}
+              </button>
+            </div>
+            <p style={{ fontSize: "0.72rem", color: "#9ca3af", marginTop: 14 }}>
+              Email is private — only used for prize contact.
+            </p>
           </div>
         </div>
       )}
+
+      {/* Already Played Modal */}
+      {alreadyPlayedEntry && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="result-modal" style={{ maxWidth: 360, textAlign: "center", paddingTop: 20 }}>
+            <img src="/assets/logo.png" alt="CogitX"
+              style={{ display: "block", margin: "0 auto 14px", maxWidth: 120, width: "50%", height: "auto" }} />
+
+            <div className="result-badge trophy" style={{ marginBottom: 12 }}>
+              🪔 Already Played!
+            </div>
+
+            <p style={{ fontSize: "0.9rem", color: "#374151", marginBottom: 16, lineHeight: 1.5 }}>
+              Hey <strong>{alreadyPlayedEntry.player_name}</strong>, you've already played this puzzle. Here's your result:
+            </p>
+
+            {/* Score card */}
+            <div style={{
+              background: "#f9fafb", border: "1px solid #e5e7eb",
+              borderRadius: 12, padding: "16px 20px", marginBottom: 16,
+            }}>
+              <div style={{ fontSize: "2rem", fontWeight: 900, color: "#111827", letterSpacing: "-0.03em" }}>
+                {alreadyPlayedEntry.final_score}
+                <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#9ca3af", marginLeft: 4 }}>pts</span>
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: 6, display: "flex", flexDirection: "column", gap: 3 }}>
+                <span>🏅 Rank #{alreadyPlayedEntry.rank}</span>
+                <span>✅ {alreadyPlayedEntry.words_correct}/14 words correct</span>
+                <span>⏱ {Math.floor(Number(alreadyPlayedEntry.time_taken_secs) / 60)}m {Number(alreadyPlayedEntry.time_taken_secs) % 60}s</span>
+                {alreadyPlayedEntry.hints_used > 0 && (
+                  <span>💡 {alreadyPlayedEntry.hints_used} hint{alreadyPlayedEntry.hints_used !== 1 ? "s" : ""} used</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                type="button"
+                className="modal-btn"
+                style={{ width: "100%" }}
+                onClick={() => {
+                  setAlreadyPlayedEntry(null);
+                  setShowLeaderboard(true);
+                }}
+              >
+                🏆 View Leaderboard
+              </button>
+              <button
+                type="button"
+                className="modal-btn secondary"
+                style={{ width: "100%" }}
+                onClick={() => setAlreadyPlayedEntry(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Floating Badge: Built on CogitX Platform */}
       <header className="platform-header" aria-label="Built on CogitX Platform">
         <a
@@ -791,7 +1064,7 @@ export default function DiwaliCardPage() {
 
       {/* Diwali Fireworks & Authentic Sound on Completion */}
       <FireworksOverlay
-        active={Boolean(resultModal && (resultModal.allCorrect || resultModal.trophy))}
+        active={fireworksDone && Boolean(resultModal)}
         soundEnabled={soundEnabled}
       />
 
@@ -829,6 +1102,23 @@ export default function DiwaliCardPage() {
             <div className="result-score">
               {resultModal.wordsCorrect} / {resultModal.wordsTotal}
             </div>
+            {resultModal.finalScore !== undefined && (
+              <div style={{
+                textAlign: "center",
+                margin: "8px 0 4px",
+                fontSize: "1.4rem",
+                fontWeight: 800,
+                color: "#F59E0B",
+                letterSpacing: "-0.02em",
+              }}>
+                🏅 Score: {resultModal.finalScore}
+                {resultModal.rank && (
+                  <span style={{ display: "block", fontSize: "0.85rem", color: "#aaa", fontWeight: 500, marginTop: 2 }}>
+                    Your Rank #{resultModal.rank}
+                  </span>
+                )}
+              </div>
+            )}
             <p className="result-ai-msg">{resultModal.aiMessage}</p>
             <div className="modal-actions">
               <button
@@ -841,6 +1131,26 @@ export default function DiwaliCardPage() {
               </button>
               <button type="button" className="modal-btn" onClick={() => setResultModal(null)}>
                 Close & Continue
+              </button>
+            </div>
+            <div style={{ textAlign: "center", marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={() => { setResultModal(null); setShowLeaderboard(true); }}
+                style={{
+                  display: "inline-block",
+                  background: "none",
+                  color: "#F59E0B",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  padding: "6px 16px",
+                  border: "1px solid #F59E0B44",
+                  borderRadius: 20,
+                  letterSpacing: "0.03em",
+                  cursor: "pointer",
+                }}
+              >
+                🏆 View Leaderboard
               </button>
             </div>
           </div>
@@ -987,6 +1297,14 @@ export default function DiwaliCardPage() {
                 <button type="button" className="action-btn" onClick={printCard}>
                   Print / PDF
                 </button>
+
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={() => setShowLeaderboard(true)}
+                >
+                  🏆 Leaderboard
+                </button>
               </div>
             </div>
           </div>
@@ -1117,6 +1435,14 @@ export default function DiwaliCardPage() {
         {toast.msg}
       </div>
       <div id="probe" ref={probeRef} />
+
+      {/* Leaderboard panel — slides up in-page, no navigation */}
+      {showLeaderboard && (
+        <LeaderboardPanel
+          onClose={() => setShowLeaderboard(false)}
+          playerName={player?.name}
+        />
+      )}
     </>
   );
 }

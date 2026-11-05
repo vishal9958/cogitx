@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import FireworksOverlay from "../components/FireworksOverlay";
 
-/* ── Crossword Definitions (Exact 1:1 replica from cogitx-diwali) ── */
+
 interface WordDef {
   n: number;
   d: "A" | "D";
@@ -16,20 +16,20 @@ interface WordDef {
 }
 
 const WORDS: WordDef[] = [
-  { n: 1,  d: "A", r: 0,  c: 5, a: "LAMP",     clue: "A source of light on a desk or in a window." },
-  { n: 5,  d: "A", r: 2,  c: 0, a: "DIYA",     clue: "Small clay dish of oil with a wick, lit at dusk on holiday evenings." },
-  { n: 7,  d: "A", r: 4,  c: 3, a: "KINDLE",   clue: "To start a fire, or to stir up a feeling." },
-  { n: 8,  d: "A", r: 6,  c: 0, a: "HOME",     clue: "Where the lights are hung and the family gathers." },
-  { n: 10, d: "A", r: 8,  c: 1, a: "FESTIVAL", clue: "A celebration marked on the calendar each year." },
-  { n: 12, d: "A", r: 11, c: 3, a: "DIWALI",   clue: "The Indian holiday of lights, celebrated around the world each autumn." },
-  { n: 14, d: "A", r: 15, c: 0, a: "PETALS",   clue: "Soft coloured parts of a flower." },
-  { n: 2,  d: "D", r: 0,  c: 8, a: "PEACE",    clue: "Calm and quiet, and a wish for the year ahead." },
-  { n: 3,  d: "D", r: 1,  c: 1, a: "WISH",     clue: "A hope for something good to come." },
-  { n: 4,  d: "D", r: 1,  c: 3, a: "DARKNESS", clue: "What every light pushes back." },
-  { n: 6,  d: "D", r: 2,  c: 5, a: "RANGOLI",  clue: "Colourful floor art made of powder at the entrance of a home." },
-  { n: 9,  d: "D", r: 7,  c: 7, a: "CANDLE",   clue: "Wax around a wick, lit for light." },
-  { n: 11, d: "D", r: 10, c: 5, a: "SWEETS",   clue: "Treats shared between neighbours and friends on a holiday." },
-  { n: 13, d: "D", r: 12, c: 2, a: "GIFTS",    clue: "Presents exchanged with family and friends." },
+  { n: 1, d: "A", r: 0, c: 5, a: "LAMP", clue: "A source of light on a desk or in a window." },
+  { n: 5, d: "A", r: 2, c: 0, a: "DIYA", clue: "Small clay dish of oil with a wick, lit at dusk on holiday evenings." },
+  { n: 7, d: "A", r: 4, c: 3, a: "KINDLE", clue: "To start a fire, or to stir up a feeling." },
+  { n: 8, d: "A", r: 6, c: 0, a: "HOME", clue: "Where the lights are hung and the family gathers." },
+  { n: 10, d: "A", r: 8, c: 1, a: "FESTIVAL", clue: "A celebration marked on the calendar each year." },
+  { n: 12, d: "A", r: 11, c: 3, a: "DIWALI", clue: "The Indian holiday of lights, celebrated around the world each autumn." },
+  { n: 14, d: "A", r: 15, c: 0, a: "PETALS", clue: "Soft coloured parts of a flower." },
+  { n: 2, d: "D", r: 0, c: 8, a: "PEACE", clue: "Calm and quiet, and a wish for the year ahead." },
+  { n: 3, d: "D", r: 1, c: 1, a: "WISH", clue: "A hope for something good to come." },
+  { n: 4, d: "D", r: 1, c: 3, a: "DARKNESS", clue: "What every light pushes back." },
+  { n: 6, d: "D", r: 2, c: 5, a: "RANGOLI", clue: "Colourful floor art made of powder at the entrance of a home." },
+  { n: 9, d: "D", r: 7, c: 7, a: "CANDLE", clue: "Wax around a wick, lit for light." },
+  { n: 11, d: "D", r: 10, c: 5, a: "SWEETS", clue: "Treats shared between neighbours and friends on a holiday." },
+  { n: 13, d: "D", r: 12, c: 2, a: "GIFTS", clue: "Presents exchanged with family and friends." },
 ];
 
 // Shaded squares in order -> S P A R K
@@ -182,6 +182,27 @@ export default function DiwaliCardPage() {
     focused,
   });
   latest.current = { letters, solved, wordIdx, idx, focused };
+  const [player, setPlayer] = useState<{ name: string; email: string } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [wrongChecks, setWrongChecks] = useState(0);
+  const [saved, setSaved] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "" });
+
+  const startGame = () => {
+    if (!form.name.trim() || !/^\S+@\S+\.\S+$/.test(form.email)) {
+      showToast("Please enter a valid name and email");
+      return;
+    }
+    // fresh start for every new player
+    try { localStorage.removeItem(SAVE_KEY); } catch { }
+    latest.current.letters = {};
+    setLetters({});
+    setHintsLeft(3);
+    setWrongChecks(0);
+    setSaved(false);
+    setPlayer({ name: form.name.trim(), email: form.email.trim().toLowerCase() });
+    setStartedAt(Date.now());
+  };
 
   /* ── unit ───────────────────────────────────────────────────── */
   useLayoutEffect(() => {
@@ -208,7 +229,7 @@ export default function DiwaliCardPage() {
       if (Object.keys(letters).length > 0) {
         localStorage.setItem(SAVE_KEY, JSON.stringify({ letters, solved }));
       }
-    } catch {}
+    } catch { }
   }, [letters, solved]);
 
   /* ── toast ──────────────────────────────────────────────────── */
@@ -409,8 +430,8 @@ export default function DiwaliCardPage() {
       text: bad
         ? `${bad} ${bad === 1 ? "letter is" : "letters are"} off`
         : empty
-        ? `Filled letters look right · ${empty} to go`
-        : "Correct",
+          ? `Filled letters look right · ${empty} to go`
+          : "Correct",
     });
   };
 
@@ -465,10 +486,10 @@ export default function DiwaliCardPage() {
       dir === "A" && has.A
         ? cell.A!
         : dir === "D" && has.D
-        ? cell.D!
-        : has.A
-        ? cell.A!
-        : cell.D!;
+          ? cell.D!
+          : has.A
+            ? cell.A!
+            : cell.D!;
     if (WORDS[target]?.cells) {
       focusWord(target, WORDS[target].cells!.indexOf(id));
     }
@@ -505,7 +526,7 @@ export default function DiwaliCardPage() {
     setWordIdx(0);
     try {
       localStorage.removeItem(SAVE_KEY);
-    } catch {}
+    } catch { }
     showToast("Puzzle cleared");
   };
 
@@ -730,6 +751,30 @@ export default function DiwaliCardPage() {
 
   return (
     <>
+      {!player && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="result-modal">
+            <div className="result-badge progress">🪔 Diwali Crossword</div>
+            <input
+              placeholder="Your name"
+              value={form.name}
+              maxLength={30}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              style={{ padding: 10, borderRadius: 8, width: "100%", marginBottom: 8 }}
+            />
+            <input
+              placeholder="Email"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              style={{ padding: 10, borderRadius: 8, width: "100%", marginBottom: 12 }}
+            />
+            <button type="button" className="modal-btn" onClick={startGame}>
+              Start Game
+            </button>
+          </div>
+        </div>
+      )}
       {/* Top Floating Badge: Built on CogitX Platform */}
       <header className="platform-header" aria-label="Built on CogitX Platform">
         <a
@@ -919,8 +964,8 @@ export default function DiwaliCardPage() {
                     hintsLeft <= 0
                       ? "All 3 hints used"
                       : word
-                      ? `Get hint for ${word.n} ${word.d === "A" ? "Across" : "Down"} (${hintsLeft} left)`
-                      : `Get a hint (${hintsLeft} left)`
+                        ? `Get hint for ${word.n} ${word.d === "A" ? "Across" : "Down"} (${hintsLeft} left)`
+                        : `Get a hint (${hintsLeft} left)`
                   }
                 >
                   Hint {word ? `(${word.n}${word.d})` : ""} [{hintsLeft}/3]

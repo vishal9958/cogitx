@@ -1,6 +1,12 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import {
+  getAudioContext,
+  installAudioUnlock,
+  playCrackerLoop,
+  stopCrackerLoop,
+} from "../lib/celebrationAudio";
 
 interface FireworksOverlayProps {
   active: boolean;
@@ -12,45 +18,27 @@ export default function FireworksOverlay({
   soundEnabled = true,
 }: FireworksOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  // Read inside the render loop so toggling sound doesn't restart the show
+  const soundRef = useRef(soundEnabled);
+  soundRef.current = soundEnabled;
+
+  // Unlock audio on real user gestures (required by iOS/Safari)
+  useEffect(() => installAudioUnlock(), []);
 
   // Background authentic Diwali cracker atmosphere
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    if (!audioRef.current) {
-      const audio = new Audio("/fireworks.mp3");
-      audio.loop = true;
-      audio.volume = 0.45;
-      audioRef.current = audio;
-    }
-
-    const audio = audioRef.current;
-
     if (active && soundEnabled) {
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
-    } else {
-      audio.pause();
-      audio.currentTime = 0;
+      playCrackerLoop();
+      return () => stopCrackerLoop();
     }
-
-    return () => {
-      audio.pause();
-    };
+    stopCrackerLoop();
   }, [active, soundEnabled]);
 
   const playLaunchSound = () => {
-    if (!soundEnabled) return;
+    if (!soundRef.current) return;
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
-        audioCtxRef.current = new AudioCtx();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") ctx.resume();
+      const ctx = getAudioContext();
+      if (!ctx) return;
       const now = ctx.currentTime;
       const duration = 0.28;
 
@@ -75,15 +63,10 @@ export default function FireworksOverlay({
   };
 
   const playBurstSound = () => {
-    if (!soundEnabled) return;
+    if (!soundRef.current) return;
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
-        audioCtxRef.current = new AudioCtx();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") ctx.resume();
+      const ctx = getAudioContext();
+      if (!ctx) return;
       const t = ctx.currentTime;
 
       // Sharp crack
@@ -344,11 +327,9 @@ export default function FireworksOverlay({
       clearInterval(launchInterval);
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener("resize", resize);
-      if (audioCtxRef.current && audioCtxRef.current.state !== "closed") {
-        audioCtxRef.current.close().catch(() => {});
-      }
     };
-  }, [active, soundEnabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   if (!active) return null;
 
